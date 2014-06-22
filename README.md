@@ -8,6 +8,9 @@ used to query Freebase. Its query-by-example approach seems more appropriate for
 interface than SQL-inspired query languages such as Neo4J's [CYPHER](http://docs.neo4j.org/chunked/stable/cypher-query-lang.html)
 or RDF's [SPARQL](http://www.w3.org/TR/rdf-sparql-query/).
 
+* [MQL language reference](http://mql.freebaseapps.com/ch03.html)
+* [MQL operators](http://wiki.freebase.com/wiki/MQL_operators)
+
 ## Comments and Feedback
 
 This document and the implementation in this repository are requests for
@@ -22,7 +25,24 @@ A simple query could look like this:
     {
       properties: {
         name: "Barack Obama"
-      }
+      },
+      id: null
     }
+
+Which means: *get the id of the entity with the name Barack Obama.*
+
+What's cool about this type of query:
+
+* Readable JSON, easily constructed by a web frontend application. 
+* Resembles the representation in the REST API; query and result are basically the same thing.
+* Granular access to individual properties, or constellations of objects.
+
+Potential Problems:
+
+* How do we tell the difference between null as in "return this value" and null as in "this property is null"?
+
+
+
+
 
 
