@@ -3,7 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name='grano-ql',
     version='0.0.1',
-    description="An entity and social network tracking software for news applications (query language extension)",
+    description="An entity and social network tracking software for"
+                + "news applications (query language extension)",
     long_description=open('README.md').read(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -25,7 +26,7 @@ setup(
     ],
     entry_points={
         'grano.startup': [
-            'ui = grano.ql.interface:Installer'
+            'ql = grano.ql.interface:Installer'
         ]
     },
     tests_require=[]
