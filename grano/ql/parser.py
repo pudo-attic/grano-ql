@@ -8,22 +8,23 @@ class QueryNode(object):
         self.is_root = name is None
 
     @property
-    def all(self):
+    def as_list(self):
         return isinstance(self.el, (list, tuple))
 
     @property
     def value(self):
-        if self.all:
+        if self.as_list:
             if len(self.el):
                 return self.el[0]
         else:
             return self.el
 
     def update(self, value):
-        if self.all:
+        if self.as_list:
             self.el[0] = value
         else:
             self.el = value
+        return self
 
     @property
     def is_leaf(self):
@@ -41,6 +42,6 @@ class QueryNode(object):
         return {
             'name': self.name,
             'value': self.value,
-            'all': self.all,
+            'as_list': self.as_list,
             'children': self.children
         }
