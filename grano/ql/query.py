@@ -6,61 +6,99 @@ from grano.model import db
 from grano.ql.parser import QueryNode
 
 
-class EntityQuery(object):
+class FieldQuery(object):
+
+    def __init__(self, parent, name, qn):
+        self.parent = parent
+        self.name = name
+        self.qn = qn
+
+    @property
+    def column(self):
+        return getattr(self.parent.alias, self.name)
+
+    def filter(self, q):
+        if self.qn is not None and self.qn.value is not None:
+            q = q.filter(self.column == self.qn.value)
+        return q
+
+    def retrieve(self, q):
+        return q.add_columns(self.column)
+
+
+class ObjectQuery(object):
+
+    model = {}
 
     def __init__(self, qn):
         self.qn = qn
-        self.entity = aliased(Entity)
-        self.q = db.session.query()
+        self.children = {}
 
-    def parse_column(self, qn):
-        col = getattr(self.entity, qn.name)
-        if qn.value is None:
-            self.q = self.q.add_columns(col)
-        else:
-            self.q = self.q.filter(col == qn.value)
+        # instantiate the model:
+        for name, cls in self.model.items():
+            qn = None
+            for qn_ in self.qn.children:
+                if qn_.name == name:
+                    qn = qn_
+            self.children[name] = cls(self, name, qn)
 
-    def parse(self):
+        self.alias = aliased(Entity)
+
+    def filter(self, q):
         for child in self.qn.children:
-            # TODO: operator parsing
-            handlers = {
-                'id': self.parse_column,
-                'created_at': self.parse_column,
-                'updated_at': self.parse_column,
-                'status': self.parse_column
-            }
-            if child.name not in handlers:
+            if child.value is None:
+                continue
+            if child.name not in self.children:
                 raise BadRequest('Unknown field: %s' % child.name)
-            handlers[child.name](child)
+            q = self.children[child.name].filter(q)
+        return q
+
+    def retrieve(self, q):
+        for name, child in self.children.items():
+            for qn in self.qn.children:
+                if qn.value is not None:
+                    continue
+                if qn.name == name or qn.name == '*':
+                    q = child.retrieve(q)
+        return q
 
     def compose(self, record):
-        data = self.qn.value.copy()
+        data = dict([(k, v) for (k, v) in self.qn.value.items() if k != '*'])
         if record is None:
             return data
         requested = dict(zip(record.keys(), record))
-        for child in self.qn.children:
-            if child.value is None:
-                data[child.name] = requested.get(child.name)
+        data.update(requested)
         return data
 
     def run(self):
-        self.parse()
+        q = db.session.query()
+        q = self.filter(q)
+        q = self.retrieve(q)
+        # TODO: offset, limit
         if self.qn.is_list:
-            res = map(self.compose, self.q)
+            return map(self.compose, q)
         else:
-            res = self.compose(self.q.first())
-        return res
+            return self.compose(q.first())
 
     def to_dict(self):
         # TODO: this is just for debug.
         return {
             'query_node': self.qn,
-            'q': unicode(self.q)
+            'result': self.run()
         }
+
+
+class EntityQuery(ObjectQuery):
+
+    model = {
+        'id': FieldQuery,
+        'created_at': FieldQuery,
+        'updated_at': FieldQuery,
+        'status': FieldQuery
+    }
 
 
 def run(query):
     qn = QueryNode(None, query)
     eq = EntityQuery(qn)
-    eq.parse()
-    return eq.run()
+    return eq
