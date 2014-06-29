@@ -1,7 +1,7 @@
 from sqlalchemy.orm import aliased
 
 from grano.lib.exc import BadRequest
-from grano.model import Entity
+from grano.model import Entity, Project
 from grano.model import db
 from grano.ql.parser import QueryNode
 
@@ -35,22 +35,27 @@ class FieldQuery(object):
 class ObjectQuery(object):
 
     model = {}
+    domain_object = None
 
     def __init__(self, parent, name, qn):
-        self.qn = qn
+        self.qn = self.patch_qn(qn)
         self.parent = parent
         self.name = name
         self.children = {}
 
         # instantiate the model:
-        for name, cls in self.model.items():
-            qn = None
-            for qn_ in self.qn.children:
-                if qn_.name == name:
-                    qn = qn_
-            self.children[name] = cls(self, name, qn)
+        if self.qn:
+            for name, cls in self.model.items():
+                qn = None
+                for qn_ in self.qn.children:
+                    if qn_.name == name:
+                        qn = qn_
+                self.children[name] = cls(self, name, qn)
 
-        self.alias = aliased(Entity)
+        self.alias = aliased(self.domain_object)
+
+    def patch_qn(self, qn):
+        return qn
 
     @property
     def root(self):
@@ -59,6 +64,8 @@ class ObjectQuery(object):
         return self.parent.root
 
     def filter(self, q):
+        if self.qn is None:
+            return q
         for child in self.qn.children:
             if child.value is None:
                 continue
@@ -68,6 +75,8 @@ class ObjectQuery(object):
         return q
 
     def retrieve(self, q):
+        if self.qn is None:
+            return q
         for name, child in self.children.items():
             for qn in self.qn.children:
                 if qn.value is not None:
@@ -78,13 +87,13 @@ class ObjectQuery(object):
 
     def compose(self, record):
         data = dict([(k, v) for (k, v) in self.qn.value.items() if k != '*'])
-        if record is None:
-            return data
-        requested = dict(zip(record.keys(), record))
-        data.update(requested)
+        if record is not None:
+            data.update(dict(zip(record.keys(), record)))
         return data
 
     def run(self):
+        if self.qn is None:
+            return None
         q = db.session.query()
         q = self.root.filter(q)
         q = self.retrieve(q)
@@ -97,19 +106,38 @@ class ObjectQuery(object):
     def to_dict(self):
         # TODO: this is just for debug.
         return {
-            'query_node': self.qn,
+            #'query_node': self.qn,
             'children': self.children,
             'result': self.run()
         }
 
 
+class ProjectQuery(ObjectQuery):
+
+    domain_object = Project
+    model = {
+        'id': FieldQuery,
+        'slug': FieldQuery,
+        'label': FieldQuery,
+        'created_at': FieldQuery,
+        'updated_at': FieldQuery
+    }
+
+    def patch_qn(self, qn):
+        if qn is not None and isinstance(qn.value, basestring):
+            qn.update({'slug': qn.value})
+        return qn
+
+
 class EntityQuery(ObjectQuery):
 
+    domain_object = Entity
     model = {
         'id': FieldQuery,
         'created_at': FieldQuery,
         'updated_at': FieldQuery,
-        'status': FieldQuery
+        'status': FieldQuery,
+        'project': ProjectQuery
     }
 
 

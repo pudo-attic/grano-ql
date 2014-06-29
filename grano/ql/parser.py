@@ -19,6 +19,12 @@ class QueryNode(object):
         else:
             return self.el
 
+    def update(self, value):
+        if self.all:
+            self.el[0] = value
+        else:
+            self.el = value
+
     @property
     def is_leaf(self):
         return not isinstance(self.value, dict)
@@ -36,6 +42,5 @@ class QueryNode(object):
             'name': self.name,
             'value': self.value,
             'all': self.all,
-            'is_leaf': self.is_leaf,
             'children': self.children
         }
