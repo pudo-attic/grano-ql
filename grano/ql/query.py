@@ -127,8 +127,8 @@ class ObjectQuery(object):
             data[PARENT_ID] = res.get(PARENT_ID)
             for qn in self.qn.children:
                 if qn.name == 'id' and self.fake_id:
-                    continue
-                if qn.value is None:
+                    del data[qn.name]
+                elif qn.value is None:
                     data[qn.name] = res.get(qn.name)
         return data
 
