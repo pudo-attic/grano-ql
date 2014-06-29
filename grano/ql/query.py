@@ -25,13 +25,21 @@ class FieldQuery(object):
     def retrieve(self, q):
         return q.add_columns(self.column)
 
+    def to_dict(self):
+        return {
+            'name': self.name,
+            'qn': self.qn
+        }
+
 
 class ObjectQuery(object):
 
     model = {}
 
-    def __init__(self, qn):
+    def __init__(self, parent, name, qn):
         self.qn = qn
+        self.parent = parent
+        self.name = name
         self.children = {}
 
         # instantiate the model:
@@ -43,6 +51,12 @@ class ObjectQuery(object):
             self.children[name] = cls(self, name, qn)
 
         self.alias = aliased(Entity)
+
+    @property
+    def root(self):
+        if self.parent is None:
+            return self
+        return self.parent.root
 
     def filter(self, q):
         for child in self.qn.children:
@@ -72,10 +86,10 @@ class ObjectQuery(object):
 
     def run(self):
         q = db.session.query()
-        q = self.filter(q)
+        q = self.root.filter(q)
         q = self.retrieve(q)
         # TODO: offset, limit
-        if self.qn.is_list:
+        if self.qn.all:
             return map(self.compose, q)
         else:
             return self.compose(q.first())
@@ -84,6 +98,7 @@ class ObjectQuery(object):
         # TODO: this is just for debug.
         return {
             'query_node': self.qn,
+            'children': self.children,
             'result': self.run()
         }
 
@@ -100,5 +115,5 @@ class EntityQuery(ObjectQuery):
 
 def run(query):
     qn = QueryNode(None, query)
-    eq = EntityQuery(qn)
+    eq = EntityQuery(None, None, qn)
     return eq
