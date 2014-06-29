@@ -41,8 +41,12 @@ Potential Problems:
 
 * How do we tell the difference between null as in "return this value" and null as in "this property is null"?
 
+## Running queries
 
+When installed the Grano QL API endpoint is available at:
 
+	/api/1/query
 
+Queries can be submitted via HTTP GET or POST request. For GET requests, a JSON string is expected to be submitted in the ``query`` query string argument. POST requests are expected to carry the payload as the body, using ``application/json`` as a content type.
 
 
