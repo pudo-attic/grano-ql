@@ -1,8 +1,9 @@
+import os
 from setuptools import setup, find_packages
 
 setup(
     name='grano-ql',
-    version='0.0.1',
+    version=os.environ.get('GRANO_RELEASE', '0.0.1'),
     description="An entity and social network tracking software for"
                 + "news applications (query language extension)",
     long_description=open('README.md').read(),
