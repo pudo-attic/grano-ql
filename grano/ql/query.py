@@ -3,6 +3,7 @@ from sqlalchemy.orm import aliased
 
 from grano.lib.exc import BadRequest
 from grano.model import Entity, Project, Account, Relation
+from grano.model import Schema
 from grano.model import db
 from grano.ql.parser import QueryNode
 
@@ -209,6 +210,24 @@ class AccountQuery(ObjectQuery):
         return qn
 
 
+class SchemaQuery(ObjectQuery):
+
+    domain_object = Schema
+    model = {
+        'id': FieldQuery,
+        'name': FieldQuery,
+        'label': FieldQuery,
+        'created_at': FieldQuery,
+        'updated_at': FieldQuery
+    }
+    default_fields = ['name', 'label']
+
+    def patch_qn(self, qn):
+        if qn is not None and isinstance(qn.value, basestring):
+            qn.update({'name': qn.value})
+        return qn
+
+
 class RelationQuery(ObjectQuery):
 
     domain_object = Relation
@@ -216,6 +235,7 @@ class RelationQuery(ObjectQuery):
         'id': FieldQuery,
         'project': (ProjectQuery, lambda p: p.project),
         'author': (AccountQuery, lambda p: p.author),
+        'schema': (SchemaQuery, lambda p: p.schema),
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
@@ -231,8 +251,10 @@ class EntityQuery(ObjectQuery):
         'updated_at': FieldQuery,
         'status': FieldQuery,
         'project': (ProjectQuery, lambda p: p.project),
+        'schemata': (SchemaQuery, lambda p: p.schemata),
         'author': (AccountQuery, lambda p: p.author),
         'inbound': (RelationQuery, lambda p: p.inbound),
+        'outbound': (RelationQuery, lambda p: p.outbound),
     }
     default_fields = ['id', 'status', 'project']
 

@@ -34,6 +34,18 @@ class TestQuery(unittest.TestCase):
         assert res['author'] is not None, res
         assert res['author']['login'] is not None, res
 
+    def test_schema_nested(self):
+        res = query({'schemata': None}).to_dict()
+        assert 'schemata' in res, res
+        assert res['schemata'] is not None, res
+        assert res['schemata']['name'] is not None, res
+
+    def test_schema_filter(self):
+        res = query({'schemata': 'fellow'}).to_dict()
+        assert 'schemata' in res, res
+        assert res['schemata'] is not None, res
+        assert res['schemata']['name'] == 'fellow', res
+
     def test_project_nested(self):
         res = query({'project': None}).to_dict()
         assert 'project' in res, res
