@@ -17,6 +17,9 @@ PARENT_ID = '__parent_id'
 
 
 class FieldQuery(object):
+    """ Query a simple column, as opposed to a more complex nested
+    object. This will simply join the required column onto the
+    parent object and - if necessary - filter it's values. """
 
     def __init__(self, parent, name, node):
         self.parent = parent
@@ -34,12 +37,6 @@ class FieldQuery(object):
 
     def add_columns(self, q):
         return q.add_columns(self.column)
-
-    def to_dict(self):
-        return {
-            'name': self.name,
-            'node': self.node
-        }
 
 
 class ObjectQuery(object):
@@ -63,7 +60,8 @@ class ObjectQuery(object):
                     self.children[name] = cls(self, name, node)
 
     def expand_query(self, name, node):
-        """ Handle wildcard queries. """
+        """ Handle wildcard queries and other fringe cases, then
+        pass the normalized query back to the constructor. """
         node = self.patch_node(node)
         value = node.value if node else None
         if value is None:
@@ -101,14 +99,9 @@ class ObjectQuery(object):
         if self.parent:
             q = self.join_parent(q)
         for child in self.node.children:
-            if child.value is None:
-                continue
             if child.name not in self.children:
                 raise BadRequest('Unknown field: %s' % child.name)
             q = self.children[child.name].filter(q)
-        return q
-
-    def join_parent(self, q):
         return q
 
     def add_columns(self, q):
@@ -135,7 +128,7 @@ class ObjectQuery(object):
         return data
 
     def query(self, parent_ids):
-        """ Construct a query for this level of the query. """
+        """ Construct a SQL query for this level of the request. """
         q = db.session.query()
         q = self.root.filter(q)
         q = self.add_columns(q)
@@ -147,13 +140,14 @@ class ObjectQuery(object):
         # TODO: temp
         if self.parent is None:
             q = q.limit(25)
-        #print q
         if not self.node.as_list:
             q = q.limit(1)
         return q.distinct()
 
     def run(self, parent_ids=None):
-        """ Actually run the query, recursively. """
+        """ Collect results for the query from this level and all
+        children. Returns a generator, of parent_id, results tuples.
+        """
         results = [self._make_object(r) for r in self.query(parent_ids)]
         ids = [r.get('id') for r in results]
 
@@ -291,6 +285,8 @@ class PropertyQuery(ObjectQuery):
                 if isinstance(obj, type_):
                     value[col] = obj
 
+        # if the name is specified, filter for it, otherwise retrieve
+        # it.
         if self.name == '*':
             value['name'] = None
         else:
@@ -302,6 +298,7 @@ class PropertyQuery(ObjectQuery):
 
     def _make_object(self, record):
         record = super(PropertyQuery, self)._make_object(record)
+        record.pop('active', None)
         for col in self.value_columns.keys():
             if col in record:
                 if 'value' not in record:
@@ -324,6 +321,8 @@ class RelationPropertyQuery(PropertyQuery):
 
 
 class PropertiesQuery(object):
+    """ A stub query object to retrieve all the requested properties
+    and return them in an associative array. """
 
     def __init__(self, parent, name, node):
         value = node.value

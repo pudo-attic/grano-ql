@@ -102,7 +102,13 @@ class TestQuery(unittest.TestCase):
         assert res['properties'] is not None, res
         assert '*' not in res['properties'], res
         assert res['properties']['name'] is not None, res
-        
+
+    def test_entity_all(self):
+        res = query({'*': None}).to_dict()
+        assert 'properties' in res, res
+        assert res['properties'] is not None, res
+        assert '*' not in res['properties'], res
+        assert res['properties']['name'] is not None, res
 
 if __name__ == '__main__':
     unittest.main()
