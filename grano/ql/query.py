@@ -2,7 +2,7 @@ from itertools import groupby
 from datetime import datetime
 
 from sqlalchemy.orm import aliased
-from sqlalchemy.sql import and_, or_
+#from sqlalchemy.sql import and_, or_
 
 from grano.lib.exc import BadRequest
 from grano.model import Entity, Project, Account, Relation
@@ -134,24 +134,28 @@ class ObjectQuery(object):
                     data[node.name] = res.get(node.name)
         return data
 
-    @property
-    def query(self):
+    def query(self, parent_ids):
         """ Construct a query for this level of the query. """
         q = db.session.query()
         q = self.root.filter(q)
         q = self.add_columns(q)
         if self.parent is not None:
             col = self.parent.alias.id.label(PARENT_ID)
+            if parent_ids is not None:
+                q = q.filter(col.in_(parent_ids))
             q = q.add_columns(col)
         # TODO: temp
         if self.parent is None:
             q = q.limit(25)
         #print q
+        if not self.node.as_list:
+            q = q.limit(1)
         return q.distinct()
 
-    def run(self):
+    def run(self, parent_ids=None):
         """ Actually run the query, recursively. """
-        results = [self._make_object(r) for r in self.query]
+        results = [self._make_object(r) for r in self.query(parent_ids)]
+        ids = [r.get('id') for r in results]
 
         if not len(results):
             p = self._make_object({})
@@ -161,7 +165,7 @@ class ObjectQuery(object):
         for name, child in self.children_objects:
             if name not in [node.name for node in self.node.children]:
                 continue
-            for parent_id, nested in child.run():
+            for parent_id, nested in child.run(parent_ids=ids):
                 for result in results:
                     if parent_id == result['id']:
                         result[name] = nested
@@ -249,7 +253,7 @@ class PropertyQuery(ObjectQuery):
     """ Property queries are the second level in querying a set of
     properties, they are called by the PropertiesQuery. This is somewhat
     complex because we need to handle types (i.e. query the appropriate
-    column for the submitted input type, or retrieve all to find the 
+    column for the submitted input type, or retrieve all to find the
     one that holds a value. """
 
     value_columns = {
@@ -293,7 +297,6 @@ class PropertyQuery(ObjectQuery):
             value['name'] = self.name
 
         value['active'] = True
-        #print value
         node.update(value)
         return node
 
@@ -341,10 +344,10 @@ class PropertiesQuery(object):
             q = child.filter(q)
         return q
 
-    def run(self):
+    def run(self, parent_ids=None):
         results = {}
         for name, child in self.children.items():
-            for parent_id, values in child.run():
+            for parent_id, values in child.run(parent_ids=parent_ids):
                 if parent_id not in results:
                     results[parent_id] = {}
                 for value in values:
