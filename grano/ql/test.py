@@ -2,6 +2,7 @@ import unittest
 
 from grano.test.util import make_test_app
 from grano.ql.query import run as query
+from grano.ql.query import PARENT_ID
 
 
 class TestQuery(unittest.TestCase):
@@ -38,7 +39,21 @@ class TestQuery(unittest.TestCase):
         assert 'project' in res, res
         assert res['project'] is not None, res
         assert res['project']['slug'] is not None, res
-        assert '__parent_id' not in res['project'], res
+        assert PARENT_ID not in res['project'], res
+
+    def test_nested_relation_inbound(self):
+        res = query({'inbound': {'id': None}}).to_dict()
+        assert 'inbound' in res, res
+        assert res['inbound'] is not None, res
+        assert res['inbound']['id'] is not None, res
+
+    def test_nested_relation_inbound_source(self):
+        res = query({'inbound': {'id': None, 'source': None}}).to_dict()
+        assert 'inbound' in res, res
+        assert res['inbound'] is not None, res
+        assert res['inbound']['id'] is not None, res
+        assert res['inbound']['source']['id'] is not None, res
+
 
 if __name__ == '__main__':
     unittest.main()

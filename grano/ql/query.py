@@ -62,7 +62,8 @@ class ObjectQuery(object):
             for qn_ in self.qn.children:
                 if qn_.name == name:
                     qn = qn_
-            self.children[name] = cls(self, name, qn)
+            if qn is not None:
+                self.children[name] = cls(self, name, qn)
 
     def expand_query(self, name, qn):
         """ Handle wildcard queries. """
@@ -74,8 +75,7 @@ class ObjectQuery(object):
             for name in self.default_fields:
                 if name not in value:
                     value[name] = None
-        self.fake_id = 'id' not in value
-        if self.fake_id:
+        if 'id' not in value:
             value['id'] = None
         if qn is not None and qn.as_list:
             value = [value]
@@ -102,8 +102,9 @@ class ObjectQuery(object):
         """ Apply the joins and filters specified on this level of the
         query. """
         for name, joiner in self.joiners.items():
-            child = self.children[name]
-            q = q.join(child.alias, joiner(self.alias))
+            if name in self.children:
+                child = self.children[name]
+                q = q.join(child.alias, joiner(self.alias))
         for child in self.qn.children:
             if child.value is None:
                 continue
@@ -164,13 +165,11 @@ class ObjectQuery(object):
         for parent_id, results in groupby(results,
                                           lambda r: r.pop(PARENT_ID)):
             results = list(results)
-            #print self.name, len(results), results
             if not self.qn.as_list:
                 results = results.pop()
             yield parent_id, results
 
     def to_dict(self):
-        # TODO: this is just for debug.
         return self.run().next()[1]
 
 
@@ -236,6 +235,9 @@ class EntityQuery(ObjectQuery):
         'inbound': (RelationQuery, lambda p: p.inbound),
     }
     default_fields = ['id', 'status', 'project']
+
+RelationQuery.model['source'] = (EntityQuery, lambda p: p.source)
+RelationQuery.model['target'] = (EntityQuery, lambda p: p.target)
 
 
 def run(query):
