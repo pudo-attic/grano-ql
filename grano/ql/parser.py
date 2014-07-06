@@ -25,6 +25,10 @@ class QueryNode(object):
             self.el = value
         return self
 
+    @value.setter
+    def value(self, value):
+        self.update(value)
+
     @property
     def is_leaf(self):
         return not isinstance(self.value, dict)

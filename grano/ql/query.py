@@ -13,6 +13,7 @@ from grano.ql.parser import QueryNode
 # TODO: and/or query branches / list queries
 
 
+EXTRA_FIELDS = ['limit', 'offset', 'sort', 'optional']
 PARENT_ID = '__parent_id'
 
 
@@ -63,21 +64,28 @@ class ObjectQuery(object):
         """ Handle wildcard queries and other fringe cases, then
         pass the normalized query back to the constructor. """
         node = self.patch_node(node)
-        value = node.value if node else None
-        if value is None:
-            value = {'*': None}
-        if '*' in value and value.pop('*') is None:
+        #value = node.value if node else None
+        if node.value is None:
+            node.value = {'*': None}
+        if '*' in node.value and node.value.pop('*') is None:
             for name in self.default_fields:
-                if name not in value:
-                    value[name] = None
-        if 'id' not in value:
-            value['id'] = None
-        if node is not None and node.as_list:
-            value = [value]
-        return QueryNode(name, value)
+                if name not in node.value:
+                    node.value[name] = None
+        if 'id' not in node.value:
+            node.value['id'] = None
+        #if node is not None and node.as_list:
+        #    node.value = [node.value]
+        #return QueryNode(name, value)
+        return node
 
     def patch_node(self, node):
         return node
+
+    def get_child_node_value(self, name, default=None):
+        for node in self.node.children:
+            if node.name == name:
+                return node.value
+        return default
 
     @property
     def root(self):
@@ -99,6 +107,8 @@ class ObjectQuery(object):
         if self.parent:
             q = self.join_parent(q)
         for child in self.node.children:
+            if child.name in EXTRA_FIELDS:
+                continue
             if child.name not in self.children:
                 raise BadRequest('Unknown field: %s' % child.name)
             q = self.children[child.name].filter(q)
@@ -137,11 +147,14 @@ class ObjectQuery(object):
             if parent_ids is not None:
                 q = q.filter(col.in_(parent_ids))
             q = q.add_columns(col)
-        # TODO: temp
-        if self.parent is None:
-            q = q.limit(25)
+
+        # pagination
+        q = q.offset(self.get_child_node_value('offset', 0))
         if not self.node.as_list:
             q = q.limit(1)
+        elif self.parent is None:
+            q = q.limit(self.get_child_node_value('limit', 25))
+
         return q.distinct()
 
     def run(self, parent_ids=None):
@@ -230,7 +243,7 @@ class SchemaQuery(ObjectQuery):
 
     def patch_node(self, node):
         if node is not None and isinstance(node.value, basestring):
-            node.update({'name': node.value})
+            node.value = {'name': node.value}
         return node
 
     def join_parent(self, q):
@@ -271,29 +284,28 @@ class PropertyQuery(ObjectQuery):
     default_fields = value_columns.keys() + ['source_url']
 
     def patch_node(self, node):
-        value = node.value
-        if isinstance(value, basestring):
-            value = {'value': value}
-        if value is None:
-            value = dict([(d, None) for d in self.default_fields])
+        if isinstance(node.value, basestring):
+            node.value = {'value': node.value}
+        if node.value is None:
+            node.value = dict([(d, None) for d in self.default_fields])
 
         # determine the actual underlying column
         # TODO: figure out how to do datetime from JSON queries!
-        if value is not None and value.get('value') is not None:
-            obj = value.pop('value')
+        if node.value is not None and node.value.get('value') is not None:
+            obj = node.value.pop('value')
             for col, type_ in self.value_columns.items():
                 if isinstance(obj, type_):
-                    value[col] = obj
+                    node.value[col] = obj
 
         # if the name is specified, filter for it, otherwise retrieve
         # it.
         if self.name == '*':
-            value['name'] = None
+            node.value['name'] = None
         else:
-            value['name'] = self.name
+            node.value['name'] = self.name
 
-        value['active'] = True
-        node.update(value)
+        node.value['active'] = True
+        node.update(node.value)
         return node
 
     def _make_object(self, record):
@@ -325,10 +337,8 @@ class PropertiesQuery(object):
     and return them in an associative array. """
 
     def __init__(self, parent, name, node):
-        value = node.value
-        if value is None:
-            value = {'*': None}
-        node.update(value)
+        if node.value is None:
+            node.value = {'*': None}
 
         self.parent = parent
         self.children = {}
@@ -425,5 +435,7 @@ OutboundRelationQuery.model['target'] = TargetEntityQuery
 
 def run(query):
     node = QueryNode(None, query)
+    node.value['limit'] = min(1000, node.value.get('limit', 25))
+    node.value['offset'] = max(0, node.value.get('offset', 0))
     eq = EntityQuery(None, None, node)
     return eq
