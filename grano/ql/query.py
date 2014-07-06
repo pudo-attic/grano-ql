@@ -16,18 +16,18 @@ PARENT_ID = '__parent_id'
 
 class FieldQuery(object):
 
-    def __init__(self, parent, name, qn):
+    def __init__(self, parent, name, node):
         self.parent = parent
         self.name = name
-        self.qn = qn
+        self.node = node
 
     @property
     def column(self):
         return getattr(self.parent.alias, self.name)
 
     def filter(self, q):
-        if self.qn is not None and self.qn.value is not None:
-            q = q.filter(self.column == self.qn.value)
+        if self.node is not None and self.node.value is not None:
+            q = q.filter(self.column == self.node.value)
         return q
 
     def add_columns(self, q):
@@ -36,7 +36,7 @@ class FieldQuery(object):
     def to_dict(self):
         return {
             'name': self.name,
-            'qn': self.qn
+            'node': self.node
         }
 
 
@@ -46,8 +46,8 @@ class ObjectQuery(object):
     domain_object = None
     default_fields = []
 
-    def __init__(self, parent, name, qn):
-        self.qn = self.expand_query(name, qn)
+    def __init__(self, parent, name, node):
+        self.node = self.expand_query(name, node)
         self.alias = aliased(self.domain_object)
         self.parent = parent
         self.name = name
@@ -59,17 +59,14 @@ class ObjectQuery(object):
             if isinstance(cls, tuple):
                 cls, joiner = cls
                 self.joiners[name] = joiner
-            qn = None
-            for qn_ in self.qn.children:
-                if qn_.name == name:
-                    qn = qn_
-            if qn is not None:
-                self.children[name] = cls(self, name, qn)
+            for node in self.node.children:
+                if node.name == name:
+                    self.children[name] = cls(self, name, node)
 
-    def expand_query(self, name, qn):
+    def expand_query(self, name, node):
         """ Handle wildcard queries. """
-        qn = self.patch_qn(qn)
-        value = qn.value if qn else None
+        node = self.patch_node(node)
+        value = node.value if node else None
         if value is None:
             value = {'*': None}
         if '*' in value and value.pop('*') is None:
@@ -78,12 +75,12 @@ class ObjectQuery(object):
                     value[name] = None
         if 'id' not in value:
             value['id'] = None
-        if qn is not None and qn.as_list:
+        if node is not None and node.as_list:
             value = [value]
         return QueryNode(name, value)
 
-    def patch_qn(self, qn):
-        return qn
+    def patch_node(self, node):
+        return node
 
     @property
     def root(self):
@@ -106,7 +103,7 @@ class ObjectQuery(object):
             if name in self.children:
                 child = self.children[name]
                 q = q.join(child.alias, joiner(self.alias))
-        for child in self.qn.children:
+        for child in self.node.children:
             if child.value is None:
                 continue
             if child.name not in self.children:
@@ -120,23 +117,23 @@ class ObjectQuery(object):
         for name, child in self.children.items():
             if isinstance(child, ObjectQuery):
                 continue
-            for qn in self.qn.children:
-                if qn.value is None and qn.name == name:
+            for node in self.node.children:
+                if node.value is None and node.name == name:
                     q = child.add_columns(q)
         return q
 
     def _make_object(self, record):
         """ Combine the results of a query and return object into
         a result object. """
-        data = dict([(k, v) for (k, v) in self.qn.value.items() if k != '*'])
+        data = dict([(k, v) for (k, v) in self.node.value.items() if k != '*'])
         if record is not None:
             res = dict(zip(record.keys(), record))
             data[PARENT_ID] = res.get(PARENT_ID)
-            for qn in self.qn.children:
-                #if qn.name == 'id' and self.fake_id:
-                #    del data[qn.name]
-                if qn.value is None:
-                    data[qn.name] = res.get(qn.name)
+            for node in self.node.children:
+                #if node.name == 'id' and self.fake_id:
+                #    del data[node.name]
+                if node.value is None:
+                    data[node.name] = res.get(node.name)
         return data
 
     @property
@@ -157,7 +154,7 @@ class ObjectQuery(object):
         """ Actually run the query, recursively. """
         results = [self._make_object(r) for r in self.query]
         for name, child in self.children_objects:
-            if name not in [qn.name for qn in self.qn.children]:
+            if name not in [node.name for node in self.node.children]:
                 continue
             for parent_id, nested in child.run():
                 for result in results:
@@ -166,7 +163,7 @@ class ObjectQuery(object):
         for parent_id, results in groupby(results,
                                           lambda r: r.pop(PARENT_ID)):
             results = list(results)
-            if not self.qn.as_list:
+            if not self.node.as_list:
                 results = results.pop()
             yield parent_id, results
 
@@ -186,10 +183,10 @@ class ProjectQuery(ObjectQuery):
     }
     default_fields = ['slug', 'label']
 
-    def patch_qn(self, qn):
-        if qn is not None and isinstance(qn.value, basestring):
-            qn.update({'slug': qn.value})
-        return qn
+    def patch_node(self, node):
+        if node is not None and isinstance(node.value, basestring):
+            node.update({'slug': node.value})
+        return node
 
 
 class AccountQuery(ObjectQuery):
@@ -204,10 +201,10 @@ class AccountQuery(ObjectQuery):
     }
     default_fields = ['login', 'full_name']
 
-    def patch_qn(self, qn):
-        if qn is not None and isinstance(qn.value, basestring):
-            qn.update({'login': qn.value})
-        return qn
+    def patch_node(self, node):
+        if node is not None and isinstance(node.value, basestring):
+            node.update({'login': node.value})
+        return node
 
 
 class SchemaQuery(ObjectQuery):
@@ -222,10 +219,33 @@ class SchemaQuery(ObjectQuery):
     }
     default_fields = ['name', 'label']
 
-    def patch_qn(self, qn):
-        if qn is not None and isinstance(qn.value, basestring):
-            qn.update({'name': qn.value})
-        return qn
+    def patch_node(self, node):
+        if node is not None and isinstance(node.value, basestring):
+            node.update({'name': node.value})
+        return node
+
+
+class PropertyQuery(ObjectQuery):
+
+    domain_object = Project
+    model = {
+        'id': FieldQuery,
+        'value': FieldQuery,
+        'source_url': FieldQuery,
+        'active': FieldQuery
+    }
+    default_fields = ['value', 'source_url']
+
+    def patch_node(self, node):
+        if node is not None and isinstance(node.value, basestring):
+            node.update({'value': node.value})
+        return node
+
+
+class PropertiesQuery(object):
+
+    def __init__(self, parent, name, node):
+        print node.children
 
 
 class RelationQuery(ObjectQuery):
@@ -236,6 +256,7 @@ class RelationQuery(ObjectQuery):
         'project': (ProjectQuery, lambda p: p.project),
         'author': (AccountQuery, lambda p: p.author),
         'schema': (SchemaQuery, lambda p: p.schema),
+        'properties': (PropertiesQuery, lambda p: p.properties),
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
@@ -255,6 +276,7 @@ class EntityQuery(ObjectQuery):
         'author': (AccountQuery, lambda p: p.author),
         'inbound': (RelationQuery, lambda p: p.inbound),
         'outbound': (RelationQuery, lambda p: p.outbound),
+        'properties': (PropertiesQuery, lambda p: p.properties),
     }
     default_fields = ['id', 'status', 'project']
 
@@ -263,6 +285,6 @@ RelationQuery.model['target'] = (EntityQuery, lambda p: p.target)
 
 
 def run(query):
-    qn = QueryNode(None, query)
-    eq = EntityQuery(None, None, qn)
+    node = QueryNode(None, query)
+    eq = EntityQuery(None, None, node)
     return eq
