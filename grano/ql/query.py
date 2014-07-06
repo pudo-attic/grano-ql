@@ -131,9 +131,9 @@ class ObjectQuery(object):
             res = dict(zip(record.keys(), record))
             data[PARENT_ID] = res.get(PARENT_ID)
             for qn in self.qn.children:
-                if qn.name == 'id' and self.fake_id:
-                    del data[qn.name]
-                elif qn.value is None:
+                #if qn.name == 'id' and self.fake_id:
+                #    del data[qn.name]
+                if qn.value is None:
                     data[qn.name] = res.get(qn.name)
         return data
 
@@ -215,8 +215,8 @@ class RelationQuery(ObjectQuery):
     domain_object = Relation
     model = {
         'id': FieldQuery,
-        #'project': (ProjectQuery, lambda p: p.project),
-        #'author': (AccountQuery, lambda p: p.author),
+        'project': (ProjectQuery, lambda p: p.project),
+        'author': (AccountQuery, lambda p: p.author),
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
