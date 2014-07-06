@@ -56,9 +56,6 @@ class ObjectQuery(object):
 
         # instantiate the model:
         for name, cls in self.model.items():
-            if isinstance(cls, tuple):
-                cls, joiner = cls
-                self.joiners[name] = joiner
             for node in self.node.children:
                 if node.name == name:
                     self.children[name] = cls(self, name, node)
@@ -99,10 +96,8 @@ class ObjectQuery(object):
     def filter(self, q):
         """ Apply the joins and filters specified on this level of the
         query. """
-        for name, joiner in self.joiners.items():
-            if name in self.children:
-                child = self.children[name]
-                q = q.join(child.alias, joiner(self.alias))
+        if self.parent:
+            q = self.join_parent(q)
         for child in self.node.children:
             if child.value is None:
                 continue
@@ -110,12 +105,15 @@ class ObjectQuery(object):
                 raise BadRequest('Unknown field: %s' % child.name)
             q = self.children[child.name].filter(q)
         return q
+    
+    def join_parent(self, q):
+        return q
 
     def add_columns(self, q):
         """ Define the columns to be retrieved when this is the active
         level of the query. """
         for name, child in self.children.items():
-            if isinstance(child, ObjectQuery):
+            if not isinstance(child, FieldQuery):
                 continue
             for node in self.node.children:
                 if node.value is None and node.name == name:
@@ -188,8 +186,11 @@ class ProjectQuery(ObjectQuery):
             node.update({'slug': node.value})
         return node
 
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.project)
 
-class AccountQuery(ObjectQuery):
+
+class AuthorQuery(ObjectQuery):
 
     domain_object = Account
     model = {
@@ -205,6 +206,9 @@ class AccountQuery(ObjectQuery):
         if node is not None and isinstance(node.value, basestring):
             node.update({'login': node.value})
         return node
+
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.author)
 
 
 class SchemaQuery(ObjectQuery):
@@ -223,6 +227,15 @@ class SchemaQuery(ObjectQuery):
         if node is not None and isinstance(node.value, basestring):
             node.update({'name': node.value})
         return node
+
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.schema)
+
+
+class SchemataQuery(SchemaQuery):
+
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.schemata)
 
 
 class PropertyQuery(ObjectQuery):
@@ -253,14 +266,26 @@ class RelationQuery(ObjectQuery):
     domain_object = Relation
     model = {
         'id': FieldQuery,
-        'project': (ProjectQuery, lambda p: p.project),
-        'author': (AccountQuery, lambda p: p.author),
-        'schema': (SchemaQuery, lambda p: p.schema),
-        'properties': (PropertiesQuery, lambda p: p.properties),
+        'project': ProjectQuery,
+        'author': AuthorQuery,
+        'schema': SchemaQuery,
+        #'properties': (PropertiesQuery, lambda p: p.properties),
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
     default_fields = ['id', 'project']
+
+
+class InboundRelationQuery(RelationQuery):
+
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.inbound)
+
+
+class OutboundRelationQuery(RelationQuery):
+
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.outbound)
 
 
 class EntityQuery(ObjectQuery):
@@ -271,17 +296,30 @@ class EntityQuery(ObjectQuery):
         'created_at': FieldQuery,
         'updated_at': FieldQuery,
         'status': FieldQuery,
-        'project': (ProjectQuery, lambda p: p.project),
-        'schemata': (SchemaQuery, lambda p: p.schemata),
-        'author': (AccountQuery, lambda p: p.author),
-        'inbound': (RelationQuery, lambda p: p.inbound),
-        'outbound': (RelationQuery, lambda p: p.outbound),
-        'properties': (PropertiesQuery, lambda p: p.properties),
+        'project': ProjectQuery,
+        'schemata': SchemataQuery,
+        'author': AuthorQuery,
+        'inbound': InboundRelationQuery,
+        'outbound': OutboundRelationQuery,
+        #'properties': (PropertiesQuery, lambda p: p.properties),
     }
     default_fields = ['id', 'status', 'project']
 
-RelationQuery.model['source'] = (EntityQuery, lambda p: p.source)
-RelationQuery.model['target'] = (EntityQuery, lambda p: p.target)
+
+class SourceEntityQuery(EntityQuery):
+
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.source)
+
+
+class TargetEntityQuery(EntityQuery):
+
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.target)
+
+
+InboundRelationQuery.model['source'] = SourceEntityQuery
+OutboundRelationQuery.model['target'] = TargetEntityQuery
 
 
 def run(query):
