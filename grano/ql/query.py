@@ -1,5 +1,8 @@
 from itertools import groupby
+from datetime import datetime
+
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql import and_, or_
 
 from grano.lib.exc import BadRequest
 from grano.model import Entity, Project, Account, Relation
@@ -7,7 +10,6 @@ from grano.model import Schema, EntityProperty, RelationProperty
 from grano.model import db
 from grano.ql.parser import QueryNode
 
-# TODO: properties stub query object
 # TODO: and/or query branches / list queries
 
 
@@ -47,10 +49,10 @@ class ObjectQuery(object):
     default_fields = []
 
     def __init__(self, parent, name, node):
+        self.name = name
         self.node = self.expand_query(name, node)
         self.alias = aliased(self.domain_object)
         self.parent = parent
-        self.name = name
         self.children = {}
         self.joiners = {}
 
@@ -144,11 +146,18 @@ class ObjectQuery(object):
         # TODO: temp
         if self.parent is None:
             q = q.limit(25)
-        return q
+        #print q
+        return q.distinct()
 
     def run(self):
         """ Actually run the query, recursively. """
         results = [self._make_object(r) for r in self.query]
+
+        if not len(results):
+            p = self._make_object({})
+            p.pop(PARENT_ID)
+            yield None, [p] if self.node.as_list else p
+
         for name, child in self.children_objects:
             if name not in [node.name for node in self.node.children]:
                 continue
@@ -237,9 +246,22 @@ class SchemataQuery(SchemaQuery):
 
 
 class PropertyQuery(ObjectQuery):
+    """ Property queries are the second level in querying a set of
+    properties, they are called by the PropertiesQuery. This is somewhat
+    complex because we need to handle types (i.e. query the appropriate
+    column for the submitted input type, or retrieve all to find the 
+    one that holds a value. """
 
+    value_columns = {
+        'value_string': basestring,
+        'value_datetime': datetime,
+        'value_integer': int,
+        'value_float': float,
+        'value_boolean': bool
+    }
     model = {
         'id': FieldQuery,
+        'name': FieldQuery,
         'value_string': FieldQuery,
         'value_datetime': FieldQuery,
         'value_integer': FieldQuery,
@@ -248,12 +270,43 @@ class PropertyQuery(ObjectQuery):
         'source_url': FieldQuery,
         'active': FieldQuery
     }
-    default_fields = ['source_url']
+    default_fields = value_columns.keys() + ['source_url']
 
     def patch_node(self, node):
-        if node is not None and isinstance(node.value, basestring):
-            node.update({'value': node.value})
+        value = node.value
+        if isinstance(value, basestring):
+            value = {'value': value}
+        if value is None:
+            value = dict([(d, None) for d in self.default_fields])
+
+        # determine the actual underlying column
+        # TODO: figure out how to do datetime from JSON queries!
+        if value is not None and value.get('value') is not None:
+            obj = value.pop('value')
+            for col, type_ in self.value_columns.items():
+                if isinstance(obj, type_):
+                    value[col] = obj
+
+        if self.name == '*':
+            value['name'] = None
+        else:
+            value['name'] = self.name
+
+        value['active'] = True
+        #print value
+        node.update(value)
         return node
+
+    def _make_object(self, record):
+        record = super(PropertyQuery, self)._make_object(record)
+        for col in self.value_columns.keys():
+            if col in record:
+                if 'value' not in record:
+                    record['value'] = None
+                val = record.pop(col)
+                if val is not None:
+                    record['value'] = val
+        return record
 
     def join_parent(self, q):
         return q.join(self.alias, self.parent.alias.properties)
@@ -270,17 +323,22 @@ class RelationPropertyQuery(PropertyQuery):
 class PropertiesQuery(object):
 
     def __init__(self, parent, name, node):
+        value = node.value
+        if value is None:
+            value = {'*': None}
+        node.update(value)
+
+        self.parent = parent
         self.children = {}
         for child in node.children:
+            if not child.as_list:
+                child.el = [child.el]
             prop = self.child_cls(parent, child.name, child)
             self.children[child.name] = prop
 
     def filter(self, q):
         for name, child in self.children.items():
-            q = child.join_parent(q)
-            # TODO name filtering?
-            q = q.filter(child.alias.name == name)
-            q = q.filter(child.alias.active == True)
+            q = child.filter(q)
         return q
 
     def run(self):
@@ -289,7 +347,8 @@ class PropertiesQuery(object):
             for parent_id, values in child.run():
                 if parent_id not in results:
                     results[parent_id] = {}
-                results[parent_id][name] = values
+                for value in values:
+                    results[parent_id][value.pop('name')] = value
         return results.items()
 
 
@@ -343,7 +402,7 @@ class EntityQuery(ObjectQuery):
         'outbound': OutboundRelationQuery,
         'properties': EntityPropertiesQuery,
     }
-    default_fields = ['id', 'status', 'project']
+    default_fields = ['id', 'status', 'properties', 'project']
 
 
 class SourceEntityQuery(EntityQuery):

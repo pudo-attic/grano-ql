@@ -78,6 +78,31 @@ class TestQuery(unittest.TestCase):
         assert res['properties'] is not None, res
         assert res['properties']['name'] is not None, res
         assert res['properties']['name']['source_url'] is not None, res
+        assert res['properties']['name']['value'] is not None, res
+
+    def test_property_filter(self):
+        name = 'BBC'
+        res = query({'properties': {'name': name}}).to_dict()
+        assert 'properties' in res, res
+        assert res['properties'] is not None, res
+        assert res['properties']['name'] is not None, res
+        assert res['properties']['name']['value'] == name, res
+
+    def test_property_filter_none(self):
+        name = 'Banana'
+        res = query({'properties': {'name': name}}).to_dict()
+        assert 'properties' in res, res
+        assert res['id'] is None, res
+        assert res['properties'] is not None, res
+        assert res['properties']['name'] is not None, res
+
+    def test_property_all(self):
+        res = query({'properties': {'*': None}}).to_dict()
+        assert 'properties' in res, res
+        assert res['properties'] is not None, res
+        assert '*' not in res['properties'], res
+        assert res['properties']['name'] is not None, res
+        
 
 if __name__ == '__main__':
     unittest.main()
