@@ -164,19 +164,14 @@ class ObjectQuery(object):
         for parent_id, results in groupby(results,
                                           lambda r: r.pop(PARENT_ID)):
             results = list(results)
-            print self.name, len(results), results
+            #print self.name, len(results), results
             if not self.qn.as_list:
                 results = results.pop()
             yield parent_id, results
 
     def to_dict(self):
         # TODO: this is just for debug.
-        return self.run().next()[1] 
-        #{
-        #    #'query_node': self.qn,
-        #    #'children': self.children,
-        #    'result': 
-        #}
+        return self.run().next()[1]
 
 
 class ProjectQuery(ObjectQuery):
@@ -192,7 +187,7 @@ class ProjectQuery(ObjectQuery):
     default_fields = ['slug', 'label']
 
     def patch_qn(self, qn):
-        if isinstance(qn.value, basestring):
+        if qn is not None and isinstance(qn.value, basestring):
             qn.update({'slug': qn.value})
         return qn
 
@@ -210,7 +205,7 @@ class AccountQuery(ObjectQuery):
     default_fields = ['login', 'full_name']
 
     def patch_qn(self, qn):
-        if isinstance(qn.value, basestring):
+        if qn is not None and isinstance(qn.value, basestring):
             qn.update({'login': qn.value})
         return qn
 

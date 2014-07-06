@@ -30,5 +30,6 @@ setup(
             'ql = grano.ql.interface:Installer'
         ]
     },
+    test_suite="grano.ql.test",
     tests_require=[]
 )
