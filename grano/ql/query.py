@@ -64,7 +64,6 @@ class ObjectQuery(object):
         """ Handle wildcard queries and other fringe cases, then
         pass the normalized query back to the constructor. """
         node = self.patch_node(node)
-        #value = node.value if node else None
         if node.value is None:
             node.value = {'*': None}
         if '*' in node.value and node.value.pop('*') is None:
@@ -73,9 +72,6 @@ class ObjectQuery(object):
                     node.value[name] = None
         if 'id' not in node.value:
             node.value['id'] = None
-        #if node is not None and node.as_list:
-        #    node.value = [node.value]
-        #return QueryNode(name, value)
         return node
 
     def patch_node(self, node):
@@ -337,7 +333,7 @@ class PropertiesQuery(object):
     and return them in an associative array. """
 
     def __init__(self, parent, name, node):
-        if node.value is None:
+        if node.value is None or not len(node.value):
             node.value = {'*': None}
 
         self.parent = parent
