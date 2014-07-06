@@ -6,6 +6,9 @@ from grano.model import Entity, Project, Account, Relation
 from grano.model import db
 from grano.ql.parser import QueryNode
 
+# TODO: properties stub query object
+# TODO: and/or query branches / list queries
+
 
 PARENT_ID = '__parent_id'
 
@@ -43,7 +46,7 @@ class ObjectQuery(object):
     default_fields = []
 
     def __init__(self, parent, name, qn):
-        self.qn = self.expand_query(qn)
+        self.qn = self.expand_query(name, qn)
         self.alias = aliased(self.domain_object)
         self.parent = parent
         self.name = name
@@ -61,10 +64,10 @@ class ObjectQuery(object):
                     qn = qn_
             self.children[name] = cls(self, name, qn)
 
-    def expand_query(self, qn):
+    def expand_query(self, name, qn):
         """ Handle wildcard queries. """
         qn = self.patch_qn(qn)
-        value = qn.value
+        value = qn.value if qn else None
         if value is None:
             value = {'*': None}
         if '*' in value and value.pop('*') is None:
@@ -74,7 +77,9 @@ class ObjectQuery(object):
         self.fake_id = 'id' not in value
         if self.fake_id:
             value['id'] = None
-        return qn.update(value)
+        if qn is not None and qn.as_list:
+            value = [value]
+        return QueryNode(name, value)
 
     def patch_qn(self, qn):
         return qn
@@ -142,13 +147,16 @@ class ObjectQuery(object):
             col = self.parent.alias.id.label(PARENT_ID)
             q = q.add_columns(col)
         # TODO: temp
-        q = q.limit(25)
+        if self.parent is None:
+            q = q.limit(25)
         return q
 
     def run(self):
         """ Actually run the query, recursively. """
         results = [self._make_object(r) for r in self.query]
         for name, child in self.children_objects:
+            if name not in [qn.name for qn in self.qn.children]:
+                continue
             for parent_id, nested in child.run():
                 for result in results:
                     if parent_id == result['id']:
@@ -156,17 +164,19 @@ class ObjectQuery(object):
         for parent_id, results in groupby(results,
                                           lambda r: r.pop(PARENT_ID)):
             results = list(results)
+            print self.name, len(results), results
             if not self.qn.as_list:
                 results = results.pop()
             yield parent_id, results
 
     def to_dict(self):
         # TODO: this is just for debug.
-        return {
-            #'query_node': self.qn,
-            #'children': self.children,
-            'result': self.run().next()[1]
-        }
+        return self.run().next()[1] 
+        #{
+        #    #'query_node': self.qn,
+        #    #'children': self.children,
+        #    'result': 
+        #}
 
 
 class ProjectQuery(ObjectQuery):
@@ -205,6 +215,19 @@ class AccountQuery(ObjectQuery):
         return qn
 
 
+class RelationQuery(ObjectQuery):
+
+    domain_object = Relation
+    model = {
+        'id': FieldQuery,
+        #'project': (ProjectQuery, lambda p: p.project),
+        #'author': (AccountQuery, lambda p: p.author),
+        'created_at': FieldQuery,
+        'updated_at': FieldQuery
+    }
+    default_fields = ['id', 'project']
+
+
 class EntityQuery(ObjectQuery):
 
     domain_object = Entity
@@ -214,9 +237,10 @@ class EntityQuery(ObjectQuery):
         'updated_at': FieldQuery,
         'status': FieldQuery,
         'project': (ProjectQuery, lambda p: p.project),
-        'author': (AccountQuery, lambda p: p.author)
+        'author': (AccountQuery, lambda p: p.author),
+        'inbound': (RelationQuery, lambda p: p.inbound),
     }
-    default_fields = ['id', 'status', 'project', 'author']
+    default_fields = ['id', 'status', 'project']
 
 
 def run(query):

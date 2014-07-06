@@ -5,7 +5,6 @@ class QueryNode(object):
     def __init__(self, name, el):
         self.el = el
         self.name = name
-        self.is_root = name is None
 
     @property
     def as_list(self):
