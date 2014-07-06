@@ -3,7 +3,7 @@ from sqlalchemy.orm import aliased
 
 from grano.lib.exc import BadRequest
 from grano.model import Entity, Project, Account, Relation
-from grano.model import Schema
+from grano.model import Schema, EntityProperty, RelationProperty
 from grano.model import db
 from grano.ql.parser import QueryNode
 
@@ -90,7 +90,7 @@ class ObjectQuery(object):
     def children_objects(self):
         """ Iterate through all children that are objects. """
         for name, child in self.children.items():
-            if isinstance(child, ObjectQuery):
+            if not isinstance(child, FieldQuery):
                 yield name, child
 
     def filter(self, q):
@@ -105,7 +105,7 @@ class ObjectQuery(object):
                 raise BadRequest('Unknown field: %s' % child.name)
             q = self.children[child.name].filter(q)
         return q
-    
+
     def join_parent(self, q):
         return q
 
@@ -128,8 +128,6 @@ class ObjectQuery(object):
             res = dict(zip(record.keys(), record))
             data[PARENT_ID] = res.get(PARENT_ID)
             for node in self.node.children:
-                #if node.name == 'id' and self.fake_id:
-                #    del data[node.name]
                 if node.value is None:
                     data[node.name] = res.get(node.name)
         return data
@@ -240,25 +238,67 @@ class SchemataQuery(SchemaQuery):
 
 class PropertyQuery(ObjectQuery):
 
-    domain_object = Project
     model = {
         'id': FieldQuery,
-        'value': FieldQuery,
+        'value_string': FieldQuery,
+        'value_datetime': FieldQuery,
+        'value_integer': FieldQuery,
+        'value_float': FieldQuery,
+        'value_boolean': FieldQuery,
         'source_url': FieldQuery,
         'active': FieldQuery
     }
-    default_fields = ['value', 'source_url']
+    default_fields = ['source_url']
 
     def patch_node(self, node):
         if node is not None and isinstance(node.value, basestring):
             node.update({'value': node.value})
         return node
 
+    def join_parent(self, q):
+        return q.join(self.alias, self.parent.alias.properties)
+
+
+class EntityPropertyQuery(PropertyQuery):
+    domain_object = EntityProperty
+
+
+class RelationPropertyQuery(PropertyQuery):
+    domain_object = RelationProperty
+
 
 class PropertiesQuery(object):
 
     def __init__(self, parent, name, node):
-        print node.children
+        self.children = {}
+        for child in node.children:
+            prop = self.child_cls(parent, child.name, child)
+            self.children[child.name] = prop
+
+    def filter(self, q):
+        for name, child in self.children.items():
+            q = child.join_parent(q)
+            # TODO name filtering?
+            q = q.filter(child.alias.name == name)
+            q = q.filter(child.alias.active == True)
+        return q
+
+    def run(self):
+        results = {}
+        for name, child in self.children.items():
+            for parent_id, values in child.run():
+                if parent_id not in results:
+                    results[parent_id] = {}
+                results[parent_id][name] = values
+        return results.items()
+
+
+class EntityPropertiesQuery(PropertiesQuery):
+    child_cls = EntityPropertyQuery
+
+
+class RelationPropertiesQuery(PropertiesQuery):
+    child_cls = RelationPropertyQuery
 
 
 class RelationQuery(ObjectQuery):
@@ -269,7 +309,7 @@ class RelationQuery(ObjectQuery):
         'project': ProjectQuery,
         'author': AuthorQuery,
         'schema': SchemaQuery,
-        #'properties': (PropertiesQuery, lambda p: p.properties),
+        'properties': RelationPropertiesQuery,
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
@@ -301,7 +341,7 @@ class EntityQuery(ObjectQuery):
         'author': AuthorQuery,
         'inbound': InboundRelationQuery,
         'outbound': OutboundRelationQuery,
-        #'properties': (PropertiesQuery, lambda p: p.properties),
+        'properties': EntityPropertiesQuery,
     }
     default_fields = ['id', 'status', 'project']
 

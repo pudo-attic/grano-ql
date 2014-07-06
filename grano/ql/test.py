@@ -72,6 +72,12 @@ class TestQuery(unittest.TestCase):
         assert res['inbound']['id'] is not None, res
         assert res['inbound']['source']['id'] is not None, res
 
+    def test_property_nested(self):
+        res = query({'properties': {'name': None}}).to_dict()
+        assert 'properties' in res, res
+        assert res['properties'] is not None, res
+        assert res['properties']['name'] is not None, res
+        assert res['properties']['name']['source_url'] is not None, res
 
 if __name__ == '__main__':
     unittest.main()
