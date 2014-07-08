@@ -18,10 +18,12 @@ def query():
         query = json.loads(request.args.get('query', 'null'))
     if query is None:
         raise BadRequest('Invalid data submitted')
+    eq = run(query)
     return jsonify({
         'status': 'ok',
         'query': query,
-        'result': run(query)
+        'query_parsed': eq.node,
+        'result': eq
     })
 
 

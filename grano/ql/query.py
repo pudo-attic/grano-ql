@@ -8,12 +8,11 @@ from grano.lib.exc import BadRequest
 from grano.model import Entity, Project, Account, Relation
 from grano.model import Schema, EntityProperty, RelationProperty
 from grano.model import db
-from grano.ql.parser import QueryNode
+from grano.ql.parser import EXTRA_FIELDS, EntityQueryNode
 
 # TODO: and/or query branches / list queries
 
 
-EXTRA_FIELDS = ['limit', 'offset', 'sort', 'optional']
 PARENT_ID = '__parent_id'
 
 
@@ -48,7 +47,7 @@ class ObjectQuery(object):
 
     def __init__(self, parent, name, node):
         self.name = name
-        self.node = self.expand_query(name, node)
+        self.node = node
         self.alias = aliased(self.domain_object)
         self.parent = parent
         self.children = {}
@@ -59,23 +58,6 @@ class ObjectQuery(object):
             for node in self.node.children:
                 if node.name == name:
                     self.children[name] = cls(self, name, node)
-
-    def expand_query(self, name, node):
-        """ Handle wildcard queries and other fringe cases, then
-        pass the normalized query back to the constructor. """
-        node = self.patch_node(node)
-        if node.value is None:
-            node.value = {'*': None}
-        if '*' in node.value and node.value.pop('*') is None:
-            for name in self.default_fields:
-                if name not in node.value:
-                    node.value[name] = None
-        if 'id' not in node.value:
-            node.value['id'] = None
-        return node
-
-    def patch_node(self, node):
-        return node
 
     def get_child_node_value(self, name, default=None):
         for node in self.node.children:
@@ -105,9 +87,8 @@ class ObjectQuery(object):
         for child in self.node.children:
             if child.name in EXTRA_FIELDS:
                 continue
-            if child.name not in self.children:
-                raise BadRequest('Unknown field: %s' % child.name)
-            q = self.children[child.name].filter(q)
+            if child.name in self.children:
+                q = self.children[child.name].filter(q)
         return q
 
     def add_columns(self, q):
@@ -193,12 +174,6 @@ class ProjectQuery(ObjectQuery):
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
-    default_fields = ['slug', 'label']
-
-    def patch_node(self, node):
-        if node is not None and isinstance(node.value, basestring):
-            node.value = {'slug': node.value}
-        return node
 
     def join_parent(self, q):
         return q.join(self.alias, self.parent.alias.project)
@@ -214,12 +189,6 @@ class AuthorQuery(ObjectQuery):
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
-    default_fields = ['login', 'full_name']
-
-    def patch_node(self, node):
-        if node is not None and isinstance(node.value, basestring):
-            node.value = {'login': node.value}
-        return node
 
     def join_parent(self, q):
         return q.join(self.alias, self.parent.alias.author)
@@ -235,12 +204,6 @@ class SchemaQuery(ObjectQuery):
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
-    default_fields = ['name', 'label']
-
-    def patch_node(self, node):
-        if node is not None and isinstance(node.value, basestring):
-            node.value = {'name': node.value}
-        return node
 
     def join_parent(self, q):
         return q.join(self.alias, self.parent.alias.schema)
@@ -277,31 +240,24 @@ class PropertyQuery(ObjectQuery):
         'source_url': FieldQuery,
         'active': FieldQuery
     }
-    default_fields = value_columns.keys() + ['source_url']
 
-    def patch_node(self, node):
-        if isinstance(node.value, basestring):
-            node.value = {'value': node.value}
-        if node.value is None:
-            node.value = dict([(d, None) for d in self.default_fields])
-
-        # determine the actual underlying column
-        # TODO: figure out how to do datetime from JSON queries!
-        if node.value is not None and node.value.get('value') is not None:
+    def __init__(self, parent, name, node):
+        if 'value' in node.value:
             obj = node.value.pop('value')
-            for col, type_ in self.value_columns.items():
-                if isinstance(obj, type_):
-                    node.value[col] = obj
+            if obj is None:
+                for col in self.value_columns:
+                    node.value[col] = None
+            else:
+                for col, type_ in self.value_columns.items():
+                    if isinstance(obj, type_):
+                        node.value[col] = obj
 
-        # if the name is specified, filter for it, otherwise retrieve
-        # it.
-        if self.name == '*':
+        if name == '*':
             node.value['name'] = None
         else:
-            node.value['name'] = self.name
-
+            node.value['name'] = name
         node.value['active'] = True
-        return node
+        super(PropertyQuery, self).__init__(parent, name, node)
 
     def _make_object(self, record):
         record = super(PropertyQuery, self)._make_object(record)
@@ -332,14 +288,10 @@ class PropertiesQuery(object):
     and return them in an associative array. """
 
     def __init__(self, parent, name, node):
-        if node.value is None or not len(node.value):
-            node.value = {'*': None}
-
         self.parent = parent
         self.children = {}
         for child in node.children:
-            if not child.as_list:
-                child.el = [child.el]
+            child.as_list = True
             prop = self.child_cls(parent, child.name, child)
             self.children[child.name] = prop
 
@@ -379,7 +331,6 @@ class RelationQuery(ObjectQuery):
         'created_at': FieldQuery,
         'updated_at': FieldQuery
     }
-    default_fields = ['id', 'project']
 
 
 class InboundRelationQuery(RelationQuery):
@@ -409,7 +360,6 @@ class EntityQuery(ObjectQuery):
         'outbound': OutboundRelationQuery,
         'properties': EntityPropertiesQuery,
     }
-    default_fields = ['id', 'status', 'properties', 'project']
 
 
 class SourceEntityQuery(EntityQuery):
@@ -429,7 +379,7 @@ OutboundRelationQuery.model['target'] = TargetEntityQuery
 
 
 def run(query):
-    node = QueryNode(None, query)
+    node = EntityQueryNode(None, query)
     node.value['limit'] = min(1000, node.value.get('limit', 25))
     node.value['offset'] = max(0, node.value.get('offset', 0))
     eq = EntityQuery(None, None, node)

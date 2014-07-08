@@ -1,33 +1,65 @@
+EXTRA_FIELDS = ['limit', 'offset', 'sort', 'optional']
 
 
 class QueryNode(object):
+    """ A query parser object. This will help the query builder traverse
+    the request and also fix up elements of the request that are
+    ambiguous. """
 
-    def __init__(self, name, el):
-        self.el = el
+    child_types = {}
+    defaults = None
+    key_field = None
+
+    def __init__(self, name, source):
+        self.as_list = isinstance(source, (list, tuple))
+        self._value = source
+        if self.as_list:
+            if len(source):
+                self._value = source[0]
+            else:
+                self._value = None
         self.name = name
 
     @property
-    def as_list(self):
-        return isinstance(self.el, (list, tuple))
+    def is_stub(self):
+        if self._value is None:
+            return True
+        if not isinstance(self._value, dict):
+            return False
+        for k, v in self._value.items():
+            if k not in EXTRA_FIELDS:
+                return False
+        return True
 
     @property
     def value(self):
-        if self.as_list:
-            if len(self.el):
-                return self.el[0]
-        else:
-            return self.el
+        """ This will patch up the object with parsing defaults. """
+        if self.is_stub:
+            if self.defaults is None:
+                return None
+            self._value = {'*': None}
 
-    def update(self, value):
-        if self.as_list:
-            self.el[0] = value
-        else:
-            self.el = value
-        return self
+        # Transform: "foo" -> {"key": "foo"}
+        if self.key_field and isinstance(self._value, basestring):
+            self._value = {self.key_field: self._value}
+
+        if isinstance(self._value, dict):
+
+            # Expand wildcard queries
+            if '*' in self._value:
+                self._value.pop('*')
+                for k, v in self.defaults.items():
+                    if k not in self._value:
+                        self._value[k] = v
+
+            # Make sure ID is always fetched
+            if 'id' not in self._value and self.name != 'properties':
+                self._value['id'] = None
+        return self._value
 
     @value.setter
     def value(self, value):
-        self.update(value)
+        self._value = value
 
     @property
     def is_leaf(self):
@@ -38,13 +70,91 @@ class QueryNode(object):
         if self.is_leaf:
             return
         for k, v in self.value.items():
-            yield QueryNode(k, v)
+            cls = self.child_types.get(None, QueryNode)
+            cls = self.child_types.get(k, cls)
+            yield cls(k, v)
 
     def to_dict(self):
-        # TODO: this is just for debug.
-        return {
-            'name': self.name,
-            'value': self.value,
-            'as_list': self.as_list,
-            'children': self.children
-        }
+        if self.is_leaf:
+            return self.value
+        else:
+            data = dict([(c.name, c) for c in self.children])
+            return [data] if self.as_list else data
+
+
+class AccountQueryNode(QueryNode):
+
+    defaults = {
+        'login': None
+    }
+    key_field = 'login'
+
+
+class ProjectQueryNode(QueryNode):
+
+    defaults = {
+        'slug': None,
+        'label': None
+    }
+    key_field = 'slug'
+
+
+class SchemaQueryNode(QueryNode):
+
+    defaults = {
+        'name': None,
+        'label': None
+    }
+    key_field = 'name'
+
+
+class PropertyQueryNode(QueryNode):
+
+    defaults = {
+        'value': None,
+        'source_url': None
+    }
+    key_field = 'value'
+
+
+class PropertiesQueryNode(QueryNode):
+
+    defaults = {
+        '*': None,
+    }
+    child_types = {
+        None: PropertyQueryNode
+    }
+
+
+class EntityQueryNode(QueryNode):
+
+    defaults = {
+        'status': None,
+        'schemata': [],
+        'properties': {}
+    }
+    child_types = {
+        'author': AccountQueryNode,
+        'project': ProjectQueryNode,
+        'schemata': SchemaQueryNode,
+        'properties': PropertiesQueryNode
+    }
+
+
+class RelationQueryNode(QueryNode):
+
+    defaults = {
+        'schema': []
+    }
+    child_types = {
+        'author': AccountQueryNode,
+        'project': ProjectQueryNode,
+        'schema': SchemaQueryNode,
+        'source': EntityQueryNode,
+        'target': EntityQueryNode,
+        'properties': PropertiesQueryNode
+    }
+
+EntityQueryNode.child_types['inbound'] = RelationQueryNode
+EntityQueryNode.child_types['outbound'] = RelationQueryNode
