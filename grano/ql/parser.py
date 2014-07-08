@@ -153,9 +153,11 @@ class RelationParserNode(ParserNode):
         'project': ProjectParserNode,
         'schema': SchemaParserNode,
         'source': EntityParserNode,
+        'other': EntityParserNode,
         'target': EntityParserNode,
         'properties': PropertiesParserNode
     }
 
 EntityParserNode.child_types['inbound'] = RelationParserNode
 EntityParserNode.child_types['outbound'] = RelationParserNode
+EntityParserNode.child_types['relations'] = RelationParserNode

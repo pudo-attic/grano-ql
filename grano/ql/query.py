@@ -2,7 +2,7 @@ from itertools import groupby
 from datetime import datetime
 
 from sqlalchemy.orm import aliased
-# from sqlalchemy.sql import and_, or_
+from sqlalchemy.sql import and_, or_
 
 from grano.model import Entity, Project, Account, Relation
 from grano.model import Schema, EntityProperty, RelationProperty
@@ -127,6 +127,7 @@ class ObjectQuery(object):
                 q = q.limit(self.get_child_node_value('limit', 10))
 
         q = q.distinct(self.children['id'].column)
+        print q
         return q
 
     def run(self, parent_ids=None):
@@ -344,6 +345,14 @@ class OutboundRelationQuery(RelationQuery):
         return q.join(self.alias, self.parent.alias.outbound)
 
 
+class BidiRelationQuery(RelationQuery):
+
+    def join_parent(self, q):
+        cond = or_(self.alias.source_id == self.parent.alias.id,
+                   self.alias.target_id == self.parent.alias.id)
+        return q.filter(cond)
+
+
 class EntityQuery(ObjectQuery):
 
     domain_object = Entity
@@ -357,6 +366,7 @@ class EntityQuery(ObjectQuery):
         'author': AuthorQuery,
         'inbound': InboundRelationQuery,
         'outbound': OutboundRelationQuery,
+        'relations': BidiRelationQuery,
         'properties': EntityPropertiesQuery,
     }
 
@@ -373,8 +383,18 @@ class TargetEntityQuery(EntityQuery):
         return q.join(self.alias, self.parent.alias.target)
 
 
+class BidiEntityQuery(EntityQuery):
+
+    def join_parent(self, q):
+        cond = and_(or_(self.parent.alias.source_id == self.alias.id,
+                        self.parent.alias.target_id == self.alias.id),
+                    self.parent.parent.alias.id != self.alias.id)
+        return q.filter(cond)
+
+
 InboundRelationQuery.model['source'] = SourceEntityQuery
 OutboundRelationQuery.model['target'] = TargetEntityQuery
+BidiRelationQuery.model['other'] = BidiEntityQuery
 
 
 def run(query):
