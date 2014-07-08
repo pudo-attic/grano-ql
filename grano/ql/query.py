@@ -2,7 +2,7 @@ from itertools import groupby
 from datetime import datetime
 
 from sqlalchemy.orm import aliased
-from sqlalchemy.sql import and_, or_
+# from sqlalchemy.sql import and_, or_
 
 from grano.model import Entity, Project, Account, Relation
 from grano.model import Schema, EntityProperty, RelationProperty
