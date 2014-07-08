@@ -28,7 +28,7 @@ changes to the language.
 
 When installed the Grano QL API endpoint is available at:
 
-	/api/1/query
+	  /api/1/query
 
 Queries can be submitted via HTTP GET or POST request. For GET requests, a JSON string is expected to be submitted in the ``query`` query string argument. POST requests are expected to carry the payload as the body, using ``application/json`` as a content type.
 
@@ -38,10 +38,10 @@ Queries can be submitted via HTTP GET or POST request. For GET requests, a JSON 
 A simple query could look like this:
 
     {
-      properties: {
-        name: "Barack Obama"
+      "properties": {
+        "name": "Barack Obama"
       },
-      id: null
+      "id": null
     }
 
 Which means: *get the id of the entity with the name Barack Obama.* 
@@ -53,16 +53,16 @@ As seen above, submitting ``null`` for any field will attempt to retrieve
 it. As a shortcut, a default set of fields can be retrieved using a
 wildcard:
 
-  {
-    *: null
-  }
+    {
+      "*": null
+    }
 
 Similarly, a filter can be set by submitting a value for a given field:
 
-  {
-    id: "xxx",
-    *: null
-  }
+    {
+      "id": "xxx",
+      "*": null
+    }
 
 This will retrieve the default set of fields for the entity with the
 specified ``id``.
@@ -73,19 +73,19 @@ specified ``id``.
 To further specify the desired return type, empty lists can be used to signify
 whether the query should return a single item or a list of items:
 
-  {
-    'schemata': {} // get the first available item
-    // vs.
-    'schemata': [{}] // get all available items
-  }
+    {
+      "schemata": {} // get the first available item
+      // vs.
+      "schemata": [{}] // get all available items
+    }
 
 This also applies to the root of the query object: queries can either
 aim to retrieve one or many entities. This will get all entities
 (pagination is used):
 
-  [{
-    *: null
-  }]
+    [{
+      "*": null
+    }]
 
 
 ## Available fields
