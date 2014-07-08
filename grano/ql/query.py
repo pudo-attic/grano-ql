@@ -197,7 +197,7 @@ class ProjectQuery(ObjectQuery):
 
     def patch_node(self, node):
         if node is not None and isinstance(node.value, basestring):
-            node.update({'slug': node.value})
+            node.value = {'slug': node.value}
         return node
 
     def join_parent(self, q):
@@ -218,7 +218,7 @@ class AuthorQuery(ObjectQuery):
 
     def patch_node(self, node):
         if node is not None and isinstance(node.value, basestring):
-            node.update({'login': node.value})
+            node.value = {'login': node.value}
         return node
 
     def join_parent(self, q):
@@ -301,7 +301,6 @@ class PropertyQuery(ObjectQuery):
             node.value['name'] = self.name
 
         node.value['active'] = True
-        node.update(node.value)
         return node
 
     def _make_object(self, record):
