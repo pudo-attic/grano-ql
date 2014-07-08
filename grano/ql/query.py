@@ -2,7 +2,7 @@ from itertools import groupby
 from datetime import datetime
 
 from sqlalchemy.orm import aliased
-#from sqlalchemy.sql import and_, or_
+from sqlalchemy.sql import and_, or_
 
 from grano.model import Entity, Project, Account, Relation
 from grano.model import Schema, EntityProperty, RelationProperty
@@ -71,13 +71,6 @@ class ObjectQuery(object):
             return self
         return self.parent.root
 
-    @property
-    def children_objects(self):
-        """ Iterate through all children that are objects. """
-        for name, child in self.children.items():
-            if not isinstance(child, FieldQuery):
-                yield name, child
-
     def filter(self, q):
         """ Apply the joins and filters specified on this level of the
         query. """
@@ -120,18 +113,21 @@ class ObjectQuery(object):
         q = self.add_columns(q)
         if self.parent is not None:
             col = self.parent.alias.id.label(PARENT_ID)
+            q = q.add_columns(col)
             if parent_ids is not None:
                 q = q.filter(col.in_(parent_ids))
-            q = q.add_columns(col)
+            q = q.distinct(col)
 
         # pagination
-        q = q.offset(self.get_child_node_value('offset', 0))
-        if not self.node.as_list:
-            q = q.limit(1)
-        elif self.parent is None:
-            q = q.limit(self.get_child_node_value('limit', 25))
+        if self.parent is None:
+            q = q.offset(self.get_child_node_value('offset', 0))
+            if not self.node.as_list:
+                q = q.limit(1)
+            else:
+                q = q.limit(self.get_child_node_value('limit', 10))
 
-        return q.distinct()
+        q = q.distinct(self.children['id'].column)
+        return q
 
     def run(self, parent_ids=None):
         """ Collect results for the query from this level and all
@@ -145,15 +141,18 @@ class ObjectQuery(object):
             p.pop(PARENT_ID)
             yield None, [p] if self.node.as_list else p
 
-        for name, child in self.children_objects:
+        for name, child in self.children.items():
+            if isinstance(child, FieldQuery):
+                continue
             if name not in [node.name for node in self.node.children]:
                 continue
             for parent_id, nested in child.run(parent_ids=ids):
                 for result in results:
                     if parent_id == result['id']:
                         result[name] = nested
-        for parent_id, results in groupby(results,
-                                          lambda r: r.pop(PARENT_ID)):
+
+        by_parent = groupby(results, lambda r: r.pop(PARENT_ID))
+        for parent_id, results in by_parent:
             results = list(results)
             if not self.node.as_list:
                 results = results.pop()
@@ -199,6 +198,7 @@ class SchemaQuery(ObjectQuery):
     model = {
         'id': FieldQuery,
         'name': FieldQuery,
+        'hidden': FieldQuery,
         'label': FieldQuery,
         'created_at': FieldQuery,
         'updated_at': FieldQuery
@@ -256,6 +256,7 @@ class PropertyQuery(ObjectQuery):
         else:
             node.value['name'] = name
         node.value['active'] = True
+        node.as_list = True
         super(PropertyQuery, self).__init__(parent, name, node)
 
     def _make_object(self, record):
@@ -290,7 +291,6 @@ class PropertiesQuery(object):
         self.parent = parent
         self.children = {}
         for child in node.children:
-            child.as_list = True
             prop = self.child_cls(parent, child.name, child)
             self.children[child.name] = prop
 

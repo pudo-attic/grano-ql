@@ -103,7 +103,8 @@ class SchemaParserNode(ParserNode):
 
     defaults = {
         'name': None,
-        'label': None
+        'label': None,
+        'hidden': None
     }
     key_field = 'name'
 
@@ -131,7 +132,7 @@ class EntityParserNode(ParserNode):
 
     defaults = {
         'status': None,
-        'schemata': [],
+        'schemata': [{}],
         'properties': {}
     }
     child_types = {
