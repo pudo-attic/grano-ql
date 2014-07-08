@@ -1,7 +1,7 @@
 EXTRA_FIELDS = ['limit', 'offset', 'sort', 'optional']
 
 
-class QueryNode(object):
+class ParserNode(object):
     """ A query parser object. This will help the query builder traverse
     the request and also fix up elements of the request that are
     ambiguous. """
@@ -70,7 +70,7 @@ class QueryNode(object):
         if self.is_leaf:
             return
         for k, v in self.value.items():
-            cls = self.child_types.get(None, QueryNode)
+            cls = self.child_types.get(None, ParserNode)
             cls = self.child_types.get(k, cls)
             yield cls(k, v)
 
@@ -82,7 +82,7 @@ class QueryNode(object):
             return [data] if self.as_list else data
 
 
-class AccountQueryNode(QueryNode):
+class AccountParserNode(ParserNode):
 
     defaults = {
         'login': None
@@ -90,7 +90,7 @@ class AccountQueryNode(QueryNode):
     key_field = 'login'
 
 
-class ProjectQueryNode(QueryNode):
+class ProjectParserNode(ParserNode):
 
     defaults = {
         'slug': None,
@@ -99,7 +99,7 @@ class ProjectQueryNode(QueryNode):
     key_field = 'slug'
 
 
-class SchemaQueryNode(QueryNode):
+class SchemaParserNode(ParserNode):
 
     defaults = {
         'name': None,
@@ -108,7 +108,7 @@ class SchemaQueryNode(QueryNode):
     key_field = 'name'
 
 
-class PropertyQueryNode(QueryNode):
+class PropertyParserNode(ParserNode):
 
     defaults = {
         'value': None,
@@ -117,17 +117,17 @@ class PropertyQueryNode(QueryNode):
     key_field = 'value'
 
 
-class PropertiesQueryNode(QueryNode):
+class PropertiesParserNode(ParserNode):
 
     defaults = {
         '*': None,
     }
     child_types = {
-        None: PropertyQueryNode
+        None: PropertyParserNode
     }
 
 
-class EntityQueryNode(QueryNode):
+class EntityParserNode(ParserNode):
 
     defaults = {
         'status': None,
@@ -135,26 +135,26 @@ class EntityQueryNode(QueryNode):
         'properties': {}
     }
     child_types = {
-        'author': AccountQueryNode,
-        'project': ProjectQueryNode,
-        'schemata': SchemaQueryNode,
-        'properties': PropertiesQueryNode
+        'author': AccountParserNode,
+        'project': ProjectParserNode,
+        'schemata': SchemaParserNode,
+        'properties': PropertiesParserNode
     }
 
 
-class RelationQueryNode(QueryNode):
+class RelationParserNode(ParserNode):
 
     defaults = {
         'schema': []
     }
     child_types = {
-        'author': AccountQueryNode,
-        'project': ProjectQueryNode,
-        'schema': SchemaQueryNode,
-        'source': EntityQueryNode,
-        'target': EntityQueryNode,
-        'properties': PropertiesQueryNode
+        'author': AccountParserNode,
+        'project': ProjectParserNode,
+        'schema': SchemaParserNode,
+        'source': EntityParserNode,
+        'target': EntityParserNode,
+        'properties': PropertiesParserNode
     }
 
-EntityQueryNode.child_types['inbound'] = RelationQueryNode
-EntityQueryNode.child_types['outbound'] = RelationQueryNode
+EntityParserNode.child_types['inbound'] = RelationParserNode
+EntityParserNode.child_types['outbound'] = RelationParserNode

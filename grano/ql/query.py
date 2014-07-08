@@ -4,11 +4,10 @@ from datetime import datetime
 from sqlalchemy.orm import aliased
 #from sqlalchemy.sql import and_, or_
 
-from grano.lib.exc import BadRequest
 from grano.model import Entity, Project, Account, Relation
 from grano.model import Schema, EntityProperty, RelationProperty
 from grano.model import db
-from grano.ql.parser import EXTRA_FIELDS, EntityQueryNode
+from grano.ql.parser import EXTRA_FIELDS, EntityParserNode
 
 # TODO: and/or query branches / list queries
 
@@ -379,7 +378,7 @@ OutboundRelationQuery.model['target'] = TargetEntityQuery
 
 
 def run(query):
-    node = EntityQueryNode(None, query)
+    node = EntityParserNode(None, query)
     node.value['limit'] = min(1000, node.value.get('limit', 25))
     node.value['offset'] = max(0, node.value.get('offset', 0))
     eq = EntityQuery(None, None, node)
