@@ -1,0 +1,31 @@
+<div class="col-md-8">
+  <div class="alert alert-warning" role="alert"
+    ng-show="loading">
+    <strong>Loading data from the server...</strong>
+  </div>
+
+  <table class="table table-condensed"
+    ng-controller="ResultTableCtrl">
+    <tr>
+      <th ng-repeat="column in columns">
+        {{column.branch.obj}}:{{column.name}}
+      </th>
+    </tr>
+    <tr ng-repeat="result in results">
+      <td ng-repeat="column in columns">
+        {{columnValue(column, result)}}
+      </td>
+    </tr>
+  </table>
+</div>
+<div class="col-md-4">
+  <div ng-repeat="branch in query.branches()"
+       ng-controller="BranchCtrl">
+    <div class="panel panel-default">
+      <div class="panel-heading">Find anything</div>
+      <div class="panel-body">
+        {{branch.obj}}
+      </div>
+    </div>
+  </div>  
+</div>
