@@ -127,7 +127,6 @@ class ObjectQuery(object):
                 q = q.limit(self.get_child_node_value('limit', 10))
 
         q = q.distinct(self.children['id'].column)
-        print q
         return q
 
     def run(self, parent_ids=None):

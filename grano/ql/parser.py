@@ -146,7 +146,8 @@ class EntityParserNode(ParserNode):
 class RelationParserNode(ParserNode):
 
     defaults = {
-        'schema': []
+        'schema': [],
+        'properties': {}
     }
     child_types = {
         'author': AccountParserNode,
