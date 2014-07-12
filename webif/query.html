@@ -4,7 +4,7 @@
     <strong>Loading data from the server...</strong>
   </div>
 
-  <table class="table table-condensed"
+  <table class="table table-condensed table-bordered"
     ng-controller="ResultTableCtrl">
     <tr>
       <th ng-repeat="column in columns">
@@ -22,9 +22,17 @@
   <div ng-repeat="branch in query.branches()"
        ng-controller="BranchCtrl">
     <div class="panel panel-default">
-      <div class="panel-heading">Find anything</div>
+      <div class="panel-heading">
+        Find
+        <select ng-model="schema" ng-options="s.name as
+          s.meta.plural_upper for s in visibleSchemata">
+          <option value="">Any entities</option>
+        </select>
+      </div>
       <div class="panel-body">
-        {{branch.obj}}
+        <ul>
+          <li ng-repeat="s in visibleSchemata">{{s.label}}</li>
+        </ul>
       </div>
     </div>
   </div>  
