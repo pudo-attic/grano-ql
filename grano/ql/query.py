@@ -42,6 +42,7 @@ class ObjectQuery(object):
 
     model = {}
     domain_object = None
+    domain_object_marker = None
     default_fields = []
 
     def __init__(self, parent, name, node):
@@ -98,6 +99,8 @@ class ObjectQuery(object):
         """ Combine the results of a query and return object into
         a result object. """
         data = dict([(k, v) for (k, v) in self.node.value.items() if k != '*'])
+        if self.domain_object_marker is not None:
+            data['obj'] = self.domain_object_marker
         if record is not None:
             res = dict(zip(record.keys(), record))
             data[PARENT_ID] = res.get(PARENT_ID)
@@ -321,6 +324,8 @@ class RelationPropertiesQuery(PropertiesQuery):
 class RelationQuery(ObjectQuery):
 
     domain_object = Relation
+    domain_object_marker = 'relation'
+
     model = {
         'id': FieldQuery,
         'project': ProjectQuery,
@@ -355,6 +360,7 @@ class BidiRelationQuery(RelationQuery):
 class EntityQuery(ObjectQuery):
 
     domain_object = Entity
+    domain_object_marker = 'entity'
     model = {
         'id': FieldQuery,
         'created_at': FieldQuery,

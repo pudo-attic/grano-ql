@@ -1,4 +1,4 @@
-EXTRA_FIELDS = ['limit', 'offset', 'sort', 'optional']
+EXTRA_FIELDS = ['limit', 'offset', 'sort', 'optional', 'obj']
 
 
 class ParserNode(object):
