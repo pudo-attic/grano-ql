@@ -7,13 +7,13 @@
   <table class="table table-condensed table-bordered"
     ng-controller="ResultTableCtrl">
     <tr>
-      <th ng-repeat="column in columns">
-        {{column.branch.obj}}:{{column.name}}
+      <th ng-repeat="header in headers">
+        {{header.name}}
       </th>
     </tr>
-    <tr ng-repeat="result in results">
-      <td ng-repeat="column in columns">
-        {{columnValue(column, result)}}
+    <tr ng-repeat="row in rows">
+      <td ng-repeat="column in row">
+        {{column.data.value}}
       </td>
     </tr>
   </table>
