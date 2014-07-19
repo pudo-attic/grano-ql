@@ -2,11 +2,11 @@
 var API_BASE = 'http://grano.local:5000/api/1';
 var API_PROJECT = 'south_africa';
 
-var granoQuery = angular.module('granoQuery', ['ngRoute']);
+var granoQuery = angular.module('granoQuery', ['ngRoute', 'ui.bootstrap']);
 
 granoQuery.factory('schemata', function($http, $q){
   var url = API_BASE + '/projects/' + API_PROJECT + '/schemata',
-      res = $http.get(url, {'params': {'limit': 1000}});
+      res = $http.get(url, {'params': {'limit': 1000, 'full': true}});
 
   var getSchemata = function(obj) {
     var dfd = $q.defer();
@@ -60,7 +60,6 @@ granoQuery.factory('query', function($http, $rootScope, $location){
     q['limit'] = 15;
     $rootScope.$broadcast('quiBeginLoad');
     var params = {'query': angular.toJson([q])};
-    console.log(params);
     var res = $http.get(API_BASE + '/query', {'params': params});
     res.then(function(rd) {
       $rootScope.$broadcast('quiUpdateResult', rd.data.result);
@@ -106,16 +105,20 @@ granoQuery.factory('query', function($http, $rootScope, $location){
 });
 
 granoQuery.factory('results', function($http, $rootScope, $location, query) {
+  var branches = [];
+
+  $rootScope.$on('quiUpdateResult', function(event, data) {
+    branches = query.branches();
+  });
 
   var rows = function(results) {
     var rows = [];
     angular.forEach(results, function(row) {
       var cols = [];
-      angular.forEach(query.branches(), function(branch) {
+      angular.forEach(branches, function(branch) {
         var path = branch[0], obj = branch[1];
         // TODO: handle multiple result in nested table
         var data = getTree(row, path)[0];
-        //if (!angular.isDefined(data['properties'])) return;
         angular.forEach(data['properties'], function(p, k) {
           cols.push({
             'name': k,
@@ -124,14 +127,16 @@ granoQuery.factory('results', function($http, $rootScope, $location, query) {
           });
         });
       });
-      rows.push(cols);
+      rows.push(cols.sort(function(a, b) {
+        return a.name.localeCompare(b.name);
+      }));
     });
     return rows;
   };
 
   var headers = function() {
     var cols = [];
-    angular.forEach(query.branches(), function(branch) {
+    angular.forEach(branches, function(branch) {
       var path = branch[0], obj = branch[1];
       angular.forEach(obj['properties'], function(p, k) {
         cols.push({
@@ -140,8 +145,10 @@ granoQuery.factory('results', function($http, $rootScope, $location, query) {
         });
       });
     });
-    return cols;
-  }
+    return cols.sort(function(a, b) {
+      return a.name.localeCompare(b.name);
+    });
+  };
 
   return {
     'rows': rows,
@@ -163,35 +170,82 @@ granoQuery.controller('ResultTableCtrl', function ($scope, results) {
 
 granoQuery.controller('BranchCtrl', function ($scope, query, schemata) {
   $scope.path = "";
-  $scope.obj = {};
+  $scope.obj = {'schema': null};
   $scope.obj_type = null;
   $scope.schemata = [];
+  $scope.attributes = [];
   $scope.visibleSchemata = [];
-  $scope.schema = null;
+
+  $scope.setSchema = function(e) {
+    $scope.obj.schema = e.name;
+    $scope.obj.properties = {'name': null};
+  };
+
+  $scope.getSchemaLabel = function() {
+    var label = 'Any entities';
+    angular.forEach($scope.schemata, function(s) {
+      if ($scope.obj.schema == s.name) {
+        label = s.meta.plural_upper || s.label;
+      }
+    });
+    return label;
+  };
+
+  $scope.columnAttributes = function () {
+    var attributes = [];
+    angular.forEach($scope.attributes, function(a) {
+      if (a.hidden) return;
+      if (angular.isDefined($scope.obj['properties']) &&
+          angular.isDefined($scope.obj.properties[a.name]) &&
+          ($scope.obj.properties[a.name] == null ||
+          $scope.obj.properties[a.name].value == null)) {
+        return;
+      }
+      attributes.push(a);
+    });
+    return attributes;
+  };
+
+  $scope.addColumn = function(attr) {
+    if (!angular.isDefined($scope.obj['properties'])) {
+      $scope.obj['properties'] = {};
+    }
+    $scope.obj.properties[attr.name] = null;
+  };
 
   $scope.$watch('branch', function(n) {
-    if (n) {
-      $scope.path = n[0];
-      $scope.obj = n[1];
-      if (/.*relations$/.test($scope.path)) {
-        $scope.obj_type = 'relation';
-      } else {
-        $scope.obj_type = 'entity';
-      }
-    }
+    if (!n) return;
+
+    $scope.path = n[0];
+    $scope.obj = n[1];
+    $scope.obj_type = /.*relations$/.test($scope.path) ? 'relation' : 'entity';
 
     schemata.get($scope.obj_type).then(function(s) {
-      var visible = [];
+      var visible = [{'name': null, 'label': 'Any'}],
+          attributes = [];
       angular.forEach(s, function(sc) {
         if (!sc.hidden) visible.push(sc);
+        if (!$scope.obj.schema || sc.name == $scope.obj.schema ||
+            $scope.obj_type == 'entity' && sc.name == 'base') {
+
+          angular.forEach(sc.attributes, function(a) {
+            var at = angular.copy(a);
+            at['schema'] = sc;
+            attributes.push(at);
+          });
+
+        }
       });
+
       $scope.visibleSchemata = visible;
       $scope.schemata = s;
+      $scope.attributes = attributes;
     });
   });
 
   $scope.$watch('obj', function(o) {
     query.set($scope.path, 'schema', o.schema);
+    query.set($scope.path, 'properties', o.properties);
     query.sync();
   }, true);
 
@@ -204,11 +258,12 @@ granoQuery.controller('AppCtrl', function ($scope, $http, $q, schemata, query) {
 
   $scope.$on('quiBeginLoad', function() {
     $scope.loading = true;
+    $scope.branches = query.branches();
   });
 
   $scope.$on('quiUpdateResult', function(event, result) {
     $scope.loading = false;
-    $scope.branches = query.branches();
+    //$scope.branches = query.branches();
   });
 
   query.init();

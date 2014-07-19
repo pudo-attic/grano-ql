@@ -23,17 +23,44 @@
        ng-controller="BranchCtrl">
     <div class="panel panel-default">
       <div class="panel-heading">
-        Find
-        <select ng-model="obj.schema" ng-options="s.name as
-          s.meta.plural_upper for s in visibleSchemata">
-          <option value="">Any entities</option>
-        </select>
+        <span class="dropdown">
+          Find <strong><a href class="dropdown-toggle">{{getSchemaLabel()}}</a></strong>
+          <ul class="dropdown-menu">
+            <li ng-repeat="schema in visibleSchemata">
+              <a href dropdown-toggle ng-click="setSchema(schema)">
+                {{schema.meta.plural_upper || schema.label}}
+              </a>
+            </li>
+          </ul>
+        </span>
       </div>
       <div class="panel-body">
-        <ul>
-          <li ng-repeat="s in visibleSchemata">{{s.label}}</li>
-        </ul>
+        <!--div ng-repeat="a in attributes">{{a.label}}</div-->
+
+        <div class="btn-group">
+          <div class="btn-group dropdown">
+            <button type="button" class="btn btn-default" dropdown-toggle>
+              <i class="fa fa-filter"></i> Apply filter
+            </button>
+            <ul class="dropdown-menu" role="menu">
+              <li ng-repeat="attr in attributes">
+                <a href>{{attr.label}}</a>
+              </li>
+            </ul>
+          </div>
+          <div class="btn-group dropdown">
+            <button type="button" class="btn btn-default" dropdown-toggle>
+              <i class="fa fa-plus-circle"></i> Add columns
+            </button>
+            <ul class="dropdown-menu" role="menu">
+              <li ng-repeat="attr in columnAttributes()">
+                <a href dropdown-toggle ng-click="addColumn(attr)">{{attr.label}}</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <!-- button type="button" class="btn btn-default"><i class="fa fa-plus-circle"></i> Link</button-->
       </div>
     </div>
-  </div>  
+  </div>
 </div>
