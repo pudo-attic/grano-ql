@@ -19,12 +19,12 @@
   </table>
 </div>
 <div class="col-md-4">
-  <div ng-repeat="branch in query.branches()"
+  <div ng-repeat="branch in branches"
        ng-controller="BranchCtrl">
     <div class="panel panel-default">
       <div class="panel-heading">
         Find
-        <select ng-model="schema" ng-options="s.name as
+        <select ng-model="obj.schema" ng-options="s.name as
           s.meta.plural_upper for s in visibleSchemata">
           <option value="">Any entities</option>
         </select>

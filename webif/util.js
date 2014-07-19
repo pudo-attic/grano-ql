@@ -27,9 +27,9 @@ var setTree = function(obj, path, value) {
   var paths = path.split('.'),
       next = paths[0],
       rest = paths.slice(1).join('.');
-  obj = ensureArray(obj);
-  angular.forEach(obj, function(o) {
-    if (!rest.length) {
+  ox = ensureArray(obj);
+  angular.forEach(ox, function(o) {
+    if (rest === '') {
       o[next] = value;
     } else {
       if (!angular.isDefined(o[next])) {

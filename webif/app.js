@@ -28,7 +28,8 @@ granoQuery.factory('schemata', function($http, $q){
 });
 
 granoQuery.factory('query', function($http, $rootScope, $location){
-  var query = {'id': null, 'properties': {'name': null}};
+  var query = {'id': null, 'properties': {'name': null}},
+      previous = angular.copy(query);
   var branches = [];
 
   var init = function() {
@@ -48,7 +49,8 @@ granoQuery.factory('query', function($http, $rootScope, $location){
     var args = Array.prototype.slice.call(arguments),
         value = args[args.length - 1],
         path = args.slice(0, args.length -1).join('.');
-    return setTree(query, path, value);
+    path = path.replace(/^\./, '').replace(/\.$/, '')
+    setTree(query, path, value);
   };
 
   var update = function() {
@@ -58,10 +60,18 @@ granoQuery.factory('query', function($http, $rootScope, $location){
     q['limit'] = 15;
     $rootScope.$broadcast('quiBeginLoad');
     var params = {'query': angular.toJson([q])};
+    console.log(params);
     var res = $http.get(API_BASE + '/query', {'params': params});
     res.then(function(rd) {
       $rootScope.$broadcast('quiUpdateResult', rd.data.result);
     });
+  };
+
+  var sync = function() {
+    if (!angular.equals(query, previous)) {
+      update();
+    }
+    previous = angular.copy(query);
   };
 
   var flatten = function(obj, prefix) {
@@ -73,7 +83,6 @@ granoQuery.factory('query', function($http, $rootScope, $location){
       angular.forEach(keys, function(k) {
         if (angular.isDefined(o[k])) {
           var sub_prefix = prefix.length ? prefix + '.' + k : k;
-          console.log(sub_prefix);
           ret = ret.concat(flatten(o[k], sub_prefix));
         }
       });
@@ -91,6 +100,7 @@ granoQuery.factory('query', function($http, $rootScope, $location){
     'set': set,
     'branches': branches,
     'update': update,
+    'sync': sync,
     'query': query
   };
 });
@@ -142,7 +152,7 @@ granoQuery.factory('results', function($http, $rootScope, $location, query) {
 
 granoQuery.controller('ResultTableCtrl', function ($scope, results) {
   $scope.rows = [];
-  $scope.headers = []
+  $scope.headers = [];
 
   $scope.$on('quiUpdateResult', function(event, data) {
     $scope.headers = results.headers();
@@ -152,41 +162,45 @@ granoQuery.controller('ResultTableCtrl', function ($scope, results) {
 
 
 granoQuery.controller('BranchCtrl', function ($scope, query, schemata) {
+  $scope.path = "";
+  $scope.obj = {};
+  $scope.obj_type = null;
   $scope.schemata = [];
   $scope.visibleSchemata = [];
   $scope.schema = null;
 
-  $scope.$watch('schema', function(n) {
-    var schema = !n || !n.length ? null : n;
-    if ($scope.branch.obj === 'entity') {
-      query.schemata = schema;
-    } else {
-      query.schema = schema;
-    }
-  });
-
   $scope.$watch('branch', function(n) {
-    if (angular.isDefined(query['schemata'])) {
-      $scope.schema = query.schemata;
-    } else if (angular.isDefined(query['schema'])) {
-      $scope.schema = query.schema;
+    if (n) {
+      $scope.path = n[0];
+      $scope.obj = n[1];
+      if (/.*relations$/.test($scope.path)) {
+        $scope.obj_type = 'relation';
+      } else {
+        $scope.obj_type = 'entity';
+      }
     }
+
+    schemata.get($scope.obj_type).then(function(s) {
+      var visible = [];
+      angular.forEach(s, function(sc) {
+        if (!sc.hidden) visible.push(sc);
+      });
+      $scope.visibleSchemata = visible;
+      $scope.schemata = s;
+    });
   });
 
-  schemata.get($scope.branch.obj).then(function(s) {
-    var visible = [];
-    angular.forEach(s, function(sc) {
-      if (!sc.hidden) visible.push(sc);
-    });
-    $scope.visibleSchemata = visible;
-    $scope.schemata = s;
-  });
+  $scope.$watch('obj', function(o) {
+    query.set($scope.path, 'schema', o.schema);
+    query.sync();
+  }, true);
 
 });
 
 
 granoQuery.controller('AppCtrl', function ($scope, $http, $q, schemata, query) {
   $scope.loading = false;
+  $scope.branches = query.branches();
 
   $scope.$on('quiBeginLoad', function() {
     $scope.loading = true;
@@ -194,10 +208,10 @@ granoQuery.controller('AppCtrl', function ($scope, $http, $q, schemata, query) {
 
   $scope.$on('quiUpdateResult', function(event, result) {
     $scope.loading = false;
+    $scope.branches = query.branches();
   });
 
   query.init();
-  //console.log(query.query);
   query.update();
 });
 
