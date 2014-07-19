@@ -139,6 +139,7 @@ class EntityParserNode(ParserNode):
         'author': AccountParserNode,
         'project': ProjectParserNode,
         'schemata': SchemaParserNode,
+        'schema': SchemaParserNode,
         'properties': PropertiesParserNode
     }
 

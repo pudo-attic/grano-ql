@@ -130,6 +130,7 @@ class ObjectQuery(object):
                 q = q.limit(self.get_child_node_value('limit', 10))
 
         q = q.distinct(self.children['id'].column)
+        print q
         return q
 
     def run(self, parent_ids=None):
@@ -274,16 +275,19 @@ class PropertyQuery(ObjectQuery):
                     record['value'] = val
         return record
 
-    def join_parent(self, q):
-        return q.join(self.alias, self.parent.alias.properties)
-
 
 class EntityPropertyQuery(PropertyQuery):
     domain_object = EntityProperty
 
+    def join_parent(self, q):
+        return q.filter(self.alias.entity_id==self.parent.alias.id)
+
 
 class RelationPropertyQuery(PropertyQuery):
     domain_object = RelationProperty
+
+    def join_parent(self, q):
+        return q.filter(self.alias.relation_id==self.parent.alias.id)
 
 
 class PropertiesQuery(object):
@@ -368,6 +372,7 @@ class EntityQuery(ObjectQuery):
         'status': FieldQuery,
         'project': ProjectQuery,
         'schemata': SchemataQuery,
+        'schema': SchemataQuery,
         'author': AuthorQuery,
         'inbound': InboundRelationQuery,
         'outbound': OutboundRelationQuery,
