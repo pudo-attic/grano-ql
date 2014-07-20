@@ -162,10 +162,6 @@ granoQuery.factory('queryState', function($http, $rootScope, $location){
 
 
 granoQuery.controller('ResultTableCtrl', function ($scope, schemata, queryState) {
-  var allSchemata = [];
-  schemata.all.then(function(schemata) {
-    allSchemata = schemata.data.results;
-  });
   $scope.rows = [];
   $scope.fields = [];
 
@@ -176,18 +172,6 @@ granoQuery.controller('ResultTableCtrl', function ($scope, schemata, queryState)
         obj.fields.properties.splice(i, 1);
     });
     queryState.sync();
-  };
-
-  $scope.fieldAttribute = function(field) {
-    var attribute = {'label': field.name};
-    angular.forEach(allSchemata, function(s) {
-      if (s.obj == field.type && s.name == field.schema) {
-        angular.forEach(s.attributes, function(a) {
-          if (a.name == field.name) attribute = a;
-        });
-      }
-    });
-    return attribute;
   };
 
   $scope.$on('queryUpdate', function(event, data) {
@@ -208,7 +192,6 @@ granoQuery.controller('ResultTableCtrl', function ($scope, schemata, queryState)
     });
     $scope.rows = rows;
   });
-
 
 });
 
@@ -332,18 +315,35 @@ granoQuery.controller('QueryObjectCtrl', function ($scope, queryState, schemata)
 });
 
 
-granoQuery.controller('AppCtrl', function ($scope, $http, $q, schemata, queryState) {
+granoQuery.controller('QueryCtrl', function ($scope, $http, $q, schemata, queryState) {
+  var allSchemata = [];
+  schemata.all.then(function(schemata) {
+    allSchemata = schemata.data.results;
+  });
+
   $scope.loading = false;
   $scope.objects = queryState.objects;
 
   $scope.$on('querySend', function() {
     $scope.loading = true;
-    //$scope.objects = queryState.objects;
   });
 
   $scope.$on('queryUpdate', function(event, result) {
     $scope.loading = false;
   });
+
+  $scope.getFieldAttribute = function(field, type) {
+    var attribute = {'label': field.name};
+    field.type = field.type || type;
+    angular.forEach(allSchemata, function(s) {
+      if (s.obj == field.type && s.name == field.schema) {
+        angular.forEach(s.attributes, function(a) {
+          if (a.name == field.name) attribute = a;
+        });
+      }
+    });
+    return attribute;
+  };
 
   queryState.init();
   queryState.sync();
@@ -353,7 +353,7 @@ granoQuery.controller('AppCtrl', function ($scope, $http, $q, schemata, querySta
 granoQuery.config(['$routeProvider', function($routeProvider) {
   $routeProvider.
     when('/', {
-      controller: 'AppCtrl',
+      controller: 'QueryCtrl',
       templateUrl: 'query.html'
     }).
     otherwise({
