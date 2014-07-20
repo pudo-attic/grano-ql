@@ -203,29 +203,14 @@ granoQuery.controller('QueryObjectCtrl', function ($scope, queryState, schemata)
   $scope.attributes = [];
   $scope.visibleSchemata = [];
 
-  $scope.addLayers = function() {
-    if ($scope.object.type == 'entity') {
-      queryState.add({'type': 'relation',
-                      'fields': {'properties': []},
-                      'filters': {'properties': []}});
-    }
-    queryState.add({'type': 'entity',
-                    'fields': {'properties': [{'schema': 'base', 'name': 'name'}]},
-                    'filters': {'properties': []}});
-  };
 
   $scope.setSchema = function(e) {
     $scope.object.filters['schema'] = e.name;
   };
 
-  $scope.canAddLayers = function() {
+  $scope.removeLayer = function() {
     var idx = queryState.objects.indexOf($scope.object);
-    return idx == queryState.objects.length - 1;
-  };
-
-  $scope.removeLayers = function() {
-    var idx = queryState.objects.indexOf($scope.object);
-    queryState.objects.splice(idx+1);
+    queryState.objects.splice(idx);
   };
 
   $scope.getSchemaLabel = function() {
@@ -299,7 +284,7 @@ granoQuery.controller('QueryObjectCtrl', function ($scope, queryState, schemata)
 
       angular.forEach(s, function(sc) {
         if (!sc.hidden) visible.push(sc);
-        if (!obj.filters['schema'] || sc.name == obj.filters['schema'] ||
+        if (sc.name == obj.filters['schema'] ||
             obj.type == 'entity' && sc.name == 'base') {
 
           angular.forEach(sc.attributes, function(a) {
@@ -352,6 +337,19 @@ granoQuery.controller('QueryCtrl', function ($scope, $http, $q, schemata, queryS
       }
     });
     return attribute;
+  };
+
+  $scope.addLayers = function() {
+    var lastObject = queryState.objects[queryState.objects.length-1];
+    if (lastObject.type == 'entity') {
+      queryState.add({'type': 'relation',
+                      'fields': {'properties': []},
+                      'filters': {'properties': []}});
+    }
+    queryState.add({'type': 'entity',
+                    'fields': {'properties': [{'schema': 'base', 'name': 'name'}]},
+                    'filters': {'properties': []}});
+    queryState.sync();
   };
 
   queryState.init();

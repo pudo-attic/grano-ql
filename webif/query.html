@@ -34,6 +34,10 @@
        ng-controller="QueryObjectCtrl">
     <div class="panel panel-default">
       <div class="panel-heading">
+        <div class="pull-right" ng-show="object.id!='root'">
+          <a href ng-click="removeLayer()"><i class="fa fa-times"></i></a>
+        </div>
+
         <span class="dropdown">
           {{actionLabel()}}
           <strong><a href class="dropdown-toggle">
@@ -83,24 +87,13 @@
               </li>
             </ul>
           </div>
-          <!--div class="btn-group dropdown">
-            <button type="button" class="btn btn-default" dropdown-toggle>
-              <i class="fa fa-plus-circle"></i> Add columns
-            </button>
-            <ul class="dropdown-menu" role="menu">
-              <li ng-repeat="attr in availableFields()">
-                <a href dropdown-toggle ng-click="addField(attr)">{{attr.label}}</a>
-              </li>
-            </ul>
-          </div>
-        </div-->
-        <button ng-show="canAddLayers()" type="button" class="btn btn-default" ng-click="addLayers()">
-          <i class="fa fa-plus-circle"></i> Relationships
-        </button>
-        <button ng-hide="canAddLayers()" type="button" class="btn btn-default" ng-click="removeLayers()">
-          <i class="fa fa-plus-circle"></i> delete Relationships
-        </button>
+        </div>
       </div>
     </div>
+  </div>
+  <div class="pull-right">
+    <button type="button" class="btn btn-default" ng-click="addLayers()">
+      <i class="fa fa-plus"></i> Add relationships
+    </button>
   </div>
 </div>
