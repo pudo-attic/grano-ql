@@ -4,6 +4,13 @@ var API_PROJECT = 'south_africa';
 
 var granoQuery = angular.module('granoQuery', ['ngRoute', 'ui.bootstrap']);
 
+function makeId() {
+    var S4 = function() {
+       return (((1+Math.random())*0x10000)|0).toString(16).substring(1);
+    };
+    return (S4()+S4()+S4());
+}
+
 granoQuery.factory('schemata', function($http, $q){
   var url = API_BASE + '/projects/' + API_PROJECT + '/schemata',
       res = $http.get(url, {'params': {'limit': 1000, 'full': true}});
@@ -23,217 +30,291 @@ granoQuery.factory('schemata', function($http, $q){
   };
 
   return {
-    'get': getSchemata
+    'get': getSchemata,
+    'all': res
   };
 });
 
-granoQuery.factory('query', function($http, $rootScope, $location){
-  var query = {'id': null, 'properties': {'name': null}},
-      previous = angular.copy(query);
-  var branches = [];
+
+granoQuery.factory('queryState', function($http, $rootScope, $location){
+  var objects = [{'id': 'root', 'type': 'entity',
+                  'fields': {'properties': [{'name': 'name', 'schema': 'base'}]},
+                  'filters': {'properties': []}}],
+      previous = null;
 
   var init = function() {
       var qs = $location.search();
-      if (angular.isDefined(qs['q'])) {
-        query = angular.fromJson(qs['q']);
+      if (angular.isDefined(qs['o'])) {
+        // can't simply assign because we can't replace 'objects'
+        objects.splice(0);
+        angular.forEach(angular.fromJson(qs['o']), function(e) {
+          objects.push(e);
+        });
       }
-      update();
-  };
-
-  var get = function() {
-    var path = Array.prototype.slice.call(arguments).join('.');
-    return getTree(query, path)[0];
-  };
-
-  var set = function() {
-    var args = Array.prototype.slice.call(arguments),
-        value = args[args.length - 1],
-        path = args.slice(0, args.length -1).join('.');
-    path = path.replace(/^\./, '').replace(/\.$/, '')
-    setTree(query, path, value);
-  };
-
-  var update = function() {
-    $location.search('q', angular.toJson(query));
-    var q = angular.copy(query);
-    q['project'] = API_PROJECT;
-    q['limit'] = 15;
-    $rootScope.$broadcast('quiBeginLoad');
-    var params = {'query': angular.toJson([q])};
-    var res = $http.get(API_BASE + '/query', {'params': params});
-    res.then(function(rd) {
-      $rootScope.$broadcast('quiUpdateResult', rd.data.result);
-    });
+      sync();
   };
 
   var sync = function() {
-    if (!angular.equals(query, previous)) {
+    if (!angular.equals(objects, previous)) {
+      $location.search('o', angular.toJson(objects));
       update();
     }
-    previous = angular.copy(query);
+    previous = angular.copy(objects);
   };
 
-  var flatten = function(obj, prefix) {
-    var ret = [];
-    obj = ensureArray(obj);
-    angular.forEach(obj, function(o) {
-      ret.push([prefix, o]);
-      var keys = ['relations', 'other'];
-      angular.forEach(keys, function(k) {
-        if (angular.isDefined(o[k])) {
-          var sub_prefix = prefix.length ? prefix + '.' + k : k;
-          ret = ret.concat(flatten(o[k], sub_prefix));
-        }
+  var update = function() {
+    var q = makeQuery();
+    q['project'] = API_PROJECT;
+    q['limit'] = 15;
+    $rootScope.$broadcast('querySend');
+    var params = {'query': angular.toJson([q])};
+    var res = $http.get(API_BASE + '/query', {'params': params});
+    res.then(function(rd) {
+      $rootScope.$broadcast('queryUpdate', rd.data.result);
+    });
+  };
+
+  var by_id = function(id) {
+    var obj = null;
+    angular.forEach(objects, function(o) {
+      if (o.id == id) obj = o;
+    });
+    return obj;
+  };
+
+  var makeQuery = function() {
+    var root = by_id('root');
+    var transformObj = function (obj) {
+      var q = {'id': null, 'properties': {}};
+
+      // define fields
+      angular.forEach(obj.fields['properties'], function(o) {
+        q['properties'][o.name] = null;
+      });
+
+      // define filters
+      angular.forEach(obj.filters['properties'], function(o) {
+        q['properties'][o.name] = {'value': o.value};
+      });
+
+      if (obj.filters['schema']) {
+        var key = obj.type == 'entity' ? 'schemata' : 'schema';
+        q[key] = obj.filters['schema'];
+      }
+
+      angular.forEach(objects, function(c) {
+        if (c['parent'] !== obj.id) return;
+        var key = obj.type == 'entity' ? 'relations' : 'other';
+        q[key] = transformObj(c);
+      });
+      return q;
+    };
+    return transformObj(root);
+  };
+
+  var add = function(object) {
+    object['id'] = makeId();
+    object['parent'] = objects[objects.length-1].id;
+    objects.push(object);
+  };
+
+  var fields = function() {
+    var fields = [];
+    angular.forEach(objects, function(object) {
+      angular.forEach(object.fields.properties, function(p) {
+        var field = angular.copy(p);
+        field['type'] = object.type;
+        field['id'] = object.id;
+        field['get'] = makeGetter(object);
+        fields.push(field);
       });
     });
-    return ret;
+    return fields;
   };
 
-  var branches = function() {
-    return flatten(query, '');
+  var makeGetter = function(obj) {
+    return function(data) {
+      if (!obj['parent']) {
+        return data;
+      };
+      var parent = null;
+      angular.forEach(objects, function(o) {
+        if (o.id == obj.parent) parent = o;
+      });
+      var parent_data = makeGetter(parent)(data),
+          parent_key = parent.type == 'entity' ? 'relations' : 'other';
+      data = parent_data[parent_key];
+      // TODO: handle multi-row results
+      if (angular.isArray(data)) data = data[0];
+      return data;
+    };
   };
 
   return {
+    'objects': objects,
     'init': init,
-    'get': get,
-    'set': set,
-    'branches': branches,
-    'update': update,
+    'add': add,
     'sync': sync,
-    'query': query
+    'by_id': by_id,
+    'fields': fields
   };
 });
 
-granoQuery.factory('results', function($http, $rootScope, $location, query) {
-  var branches = [];
 
-  $rootScope.$on('quiUpdateResult', function(event, data) {
-    branches = query.branches();
+granoQuery.controller('ResultTableCtrl', function ($scope, schemata, queryState) {
+  var allSchemata = [];
+  schemata.all.then(function(schemata) {
+    allSchemata = schemata.data.results;
   });
-
-  var rows = function(results) {
-    var rows = [];
-    angular.forEach(results, function(row) {
-      var cols = [];
-      angular.forEach(branches, function(branch) {
-        var path = branch[0], obj = branch[1];
-        // TODO: handle multiple result in nested table
-        var data = getTree(row, path)[0];
-        angular.forEach(data['properties'], function(p, k) {
-          cols.push({
-            'name': k,
-            'obj': obj,
-            'data': p
-          });
-        });
-      });
-      rows.push(cols.sort(function(a, b) {
-        return a.name.localeCompare(b.name);
-      }));
-    });
-    return rows;
-  };
-
-  var headers = function() {
-    var cols = [];
-    angular.forEach(branches, function(branch) {
-      var path = branch[0], obj = branch[1];
-      angular.forEach(obj['properties'], function(p, k) {
-        cols.push({
-          'name': k,
-          'obj': obj
-        });
-      });
-    });
-    return cols.sort(function(a, b) {
-      return a.name.localeCompare(b.name);
-    });
-  };
-
-  return {
-    'rows': rows,
-    'headers': headers
-  };
-});
-
-
-granoQuery.controller('ResultTableCtrl', function ($scope, results) {
   $scope.rows = [];
-  $scope.headers = [];
+  $scope.fields = [];
 
-  $scope.$on('quiUpdateResult', function(event, data) {
-    $scope.headers = results.headers();
-    $scope.rows = results.rows(data);
+  $scope.removeColumn = function(field) {
+    var obj = queryState.by_id(field.id);
+    angular.forEach(obj.fields.properties, function(p, i) {
+      if (p.name == field.name)
+        obj.fields.properties.splice(i, 1);
+    });
+    queryState.sync();
+  };
+
+  $scope.fieldAttribute = function(field) {
+    var attribute = {'label': field.name};
+    angular.forEach(allSchemata, function(s) {
+      if (s.obj == field.type && s.name == field.schema) {
+        angular.forEach(s.attributes, function(a) {
+          if (a.name == field.name) attribute = a;
+        });
+      }
+    });
+    return attribute;
+  };
+
+  $scope.$on('queryUpdate', function(event, data) {
+    $scope.fields = queryState.fields();
+    var rows = [];
+    angular.forEach(data, function(row) {
+      var columns = [];
+      angular.forEach($scope.fields, function(field) {
+        var obj = field.get(row),
+            prop = obj.properties[field.name] || {};
+        columns.push({
+          'name': field.name,
+          'schema': field.schame,
+          'value': prop['value']
+        });
+      });
+      rows.push(columns);
+    });
+    $scope.rows = rows;
   });
+
+
 });
 
 
-granoQuery.controller('BranchCtrl', function ($scope, query, schemata) {
-  $scope.path = "";
-  $scope.obj = {'schema': null};
-  $scope.obj_type = null;
+granoQuery.controller('QueryObjectCtrl', function ($scope, queryState, schemata) {
   $scope.schemata = [];
   $scope.attributes = [];
   $scope.visibleSchemata = [];
 
+  $scope.addLayer = function() {
+    queryState.add({'type': 'relation',
+                    'fields': {'properties': []},
+                    'filters': {'properties': []}});
+    queryState.add({'type': 'entity',
+                    'fields': {'properties': [{'schema': 'base', 'name': 'name'}]},
+                    'filters': {'properties': []}});
+  };
+
   $scope.setSchema = function(e) {
-    $scope.obj.schema = e.name;
-    $scope.obj.properties = {'name': null};
+    $scope.object.filters['schema'] = e.name;
+  };
+
+  $scope.canAddLayer = function() {
+    var idx = queryState.objects.indexOf($scope.object);
+    return idx == queryState.objects.length - 1;
   };
 
   $scope.getSchemaLabel = function() {
-    var label = 'Any entities';
+    var label = $scope.anyLabel();
     angular.forEach($scope.schemata, function(s) {
-      if ($scope.obj.schema == s.name) {
+      if ($scope.object.filters['schema'] == s.name) {
         label = s.meta.plural_upper || s.label;
       }
     });
     return label;
   };
 
-  $scope.columnAttributes = function () {
+  $scope.anyLabel = function() {
+    if ($scope.object.type == 'relation') return 'Any relation type';
+    return 'Any entities';
+  };
+
+  $scope.actionLabel = function() {
+    if ($scope.object.id == 'root') return 'Find';
+    if ($scope.object.type == 'relation') return 'connected via';
+    return 'to';
+  };
+
+  $scope.availableFields = function () {
     var attributes = [];
     angular.forEach($scope.attributes, function(a) {
       if (a.hidden) return;
-      if (angular.isDefined($scope.obj['properties']) &&
-          angular.isDefined($scope.obj.properties[a.name]) &&
-          ($scope.obj.properties[a.name] == null ||
-          $scope.obj.properties[a.name].value == null)) {
-        return;
-      }
-      attributes.push(a);
+      var taken = false;
+      angular.forEach($scope.object.fields.properties, function(p) {
+        if (p.name == a.name && p.schema == a.schema.name) taken = true;
+      });
+      if (!taken) attributes.push(a);
     });
     return attributes;
   };
 
-  $scope.addColumn = function(attr) {
-    if (!angular.isDefined($scope.obj['properties'])) {
-      $scope.obj['properties'] = {};
-    }
-    $scope.obj.properties[attr.name] = null;
+  $scope.availableFilters = function () {
+    var attributes = [];
+    angular.forEach($scope.attributes, function(a) {
+      if (a.hidden) return;
+      var taken = false;
+      angular.forEach($scope.object.filters.properties, function(p) {
+        if (p.name == a.name && p.schema == a.schema.name) taken = true;
+      });
+      if (!taken) attributes.push(a);
+    });
+    return attributes;
   };
 
-  $scope.$watch('branch', function(n) {
-    if (!n) return;
+  $scope.addField = function(attr) {
+    $scope.object.fields.properties.push({
+      'name': attr.name,
+      'schema': attr.schema.name
+    });
+  };
 
-    $scope.path = n[0];
-    $scope.obj = n[1];
-    $scope.obj_type = /.*relations$/.test($scope.path) ? 'relation' : 'entity';
+  $scope.addFilter = function(attr) {
+    $scope.object.filters.properties.push({
+      'name': attr.name,
+      'schema': attr.schema.name,
+      'value': ''
+    });
+  };
 
-    schemata.get($scope.obj_type).then(function(s) {
-      var visible = [{'name': null, 'label': 'Any'}],
+  $scope.$watch('object', function(obj) {
+    if (!obj) return;
+
+    schemata.get(obj.type).then(function(s) {
+      var visible = [{'name': null, 'label': $scope.anyLabel()}],
           attributes = [];
+
       angular.forEach(s, function(sc) {
         if (!sc.hidden) visible.push(sc);
-        if (!$scope.obj.schema || sc.name == $scope.obj.schema ||
-            $scope.obj_type == 'entity' && sc.name == 'base') {
+        if (!obj.filters['schema'] || sc.name == obj.filters['schema'] ||
+            obj.type == 'entity' && sc.name == 'base') {
 
           angular.forEach(sc.attributes, function(a) {
             var at = angular.copy(a);
             at['schema'] = sc;
             attributes.push(at);
           });
-
         }
       });
 
@@ -241,33 +322,31 @@ granoQuery.controller('BranchCtrl', function ($scope, query, schemata) {
       $scope.schemata = s;
       $scope.attributes = attributes;
     });
+
   });
 
-  $scope.$watch('obj', function(o) {
-    query.set($scope.path, 'schema', o.schema);
-    query.set($scope.path, 'properties', o.properties);
-    query.sync();
+  $scope.$watch('object', function(o) {
+    queryState.sync();
   }, true);
 
 });
 
 
-granoQuery.controller('AppCtrl', function ($scope, $http, $q, schemata, query) {
+granoQuery.controller('AppCtrl', function ($scope, $http, $q, schemata, queryState) {
   $scope.loading = false;
-  $scope.branches = query.branches();
+  $scope.objects = queryState.objects;
 
-  $scope.$on('quiBeginLoad', function() {
+  $scope.$on('querySend', function() {
     $scope.loading = true;
-    $scope.branches = query.branches();
+    //$scope.objects = queryState.objects;
   });
 
-  $scope.$on('quiUpdateResult', function(event, result) {
+  $scope.$on('queryUpdate', function(event, result) {
     $scope.loading = false;
-    //$scope.branches = query.branches();
   });
 
-  query.init();
-  query.update();
+  queryState.init();
+  queryState.sync();
 });
 
 
