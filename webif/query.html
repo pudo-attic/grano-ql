@@ -21,14 +21,15 @@
         </th>
       </tr>
       <tr ng-repeat="row in rows">
-        <td ng-repeat="column in row">
-          {{column.value}}
+        <td ng-repeat="cell in row">
+          <a ng-show="cell.name=='name'" href="{{cell.id}}">{{cell.value}}</a>
+          <span ng-hide="cell.name=='name'">{{cell.value}}</span>
         </td>
       </tr>
     </table>
   </div>
 </div>
-<div class="col-md-4">
+<div class="col-md-4" style="overflow-z: scroll">
   <div ng-repeat="object in objects"
        ng-controller="QueryObjectCtrl">
     <div class="panel panel-default">
@@ -93,8 +94,11 @@
             </ul>
           </div>
         </div-->
-        <button ng-show="canAddLayer()" type="button" class="btn btn-default" ng-click="addLayer()">
+        <button ng-show="canAddLayers()" type="button" class="btn btn-default" ng-click="addLayers()">
           <i class="fa fa-plus-circle"></i> Relationships
+        </button>
+        <button ng-hide="canAddLayers()" type="button" class="btn btn-default" ng-click="removeLayers()">
+          <i class="fa fa-plus-circle"></i> delete Relationships
         </button>
       </div>
     </div>

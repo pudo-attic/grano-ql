@@ -178,17 +178,19 @@ granoQuery.controller('ResultTableCtrl', function ($scope, schemata, queryState)
     $scope.fields = queryState.fields();
     var rows = [];
     angular.forEach(data, function(row) {
-      var columns = [];
+      var cells = [];
       angular.forEach($scope.fields, function(field) {
         var obj = field.get(row),
             prop = obj.properties[field.name] || {};
-        columns.push({
+        cells.push({
           'name': field.name,
+          'type': field.type,
+          'id': obj.id,
           'schema': field.schame,
           'value': prop['value']
         });
       });
-      rows.push(columns);
+      rows.push(cells);
     });
     $scope.rows = rows;
   });
@@ -201,10 +203,12 @@ granoQuery.controller('QueryObjectCtrl', function ($scope, queryState, schemata)
   $scope.attributes = [];
   $scope.visibleSchemata = [];
 
-  $scope.addLayer = function() {
-    queryState.add({'type': 'relation',
-                    'fields': {'properties': []},
-                    'filters': {'properties': []}});
+  $scope.addLayers = function() {
+    if ($scope.object.type == 'entity') {
+      queryState.add({'type': 'relation',
+                      'fields': {'properties': []},
+                      'filters': {'properties': []}});
+    }
     queryState.add({'type': 'entity',
                     'fields': {'properties': [{'schema': 'base', 'name': 'name'}]},
                     'filters': {'properties': []}});
@@ -214,9 +218,14 @@ granoQuery.controller('QueryObjectCtrl', function ($scope, queryState, schemata)
     $scope.object.filters['schema'] = e.name;
   };
 
-  $scope.canAddLayer = function() {
+  $scope.canAddLayers = function() {
     var idx = queryState.objects.indexOf($scope.object);
     return idx == queryState.objects.length - 1;
+  };
+
+  $scope.removeLayers = function() {
+    var idx = queryState.objects.indexOf($scope.object);
+    queryState.objects.splice(idx+1);
   };
 
   $scope.getSchemaLabel = function() {
