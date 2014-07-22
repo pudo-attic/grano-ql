@@ -5,7 +5,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.sql import and_, or_
 
 from grano.model import Entity, Project, Account, Relation
-from grano.model import Schema, EntityProperty, RelationProperty
+from grano.model import Schema, Property
 from grano.model import db
 from grano.ql.parser import EXTRA_FIELDS, EntityParserNode
 
@@ -112,7 +112,7 @@ class ObjectQuery(object):
     def query(self, parent_ids):
         """ Construct a SQL query for this level of the request. """
         q = db.session.query()
-        q = self.root.filter(q)
+        q = self.filter(q)
         q = self.add_columns(q)
         if self.parent is not None:
             col = self.parent.alias.id.label(PARENT_ID)
@@ -130,7 +130,6 @@ class ObjectQuery(object):
                 q = q.limit(self.get_child_node_value('limit', 10))
 
         q = q.distinct(self.children['id'].column)
-        print q
         return q
 
     def run(self, parent_ids=None):
@@ -225,6 +224,7 @@ class PropertyQuery(ObjectQuery):
     column for the submitted input type, or retrieve all to find the
     one that holds a value. """
 
+    domain_object = Property
     value_columns = {
         'value_string': basestring,
         'value_datetime': datetime,
@@ -277,17 +277,15 @@ class PropertyQuery(ObjectQuery):
 
 
 class EntityPropertyQuery(PropertyQuery):
-    domain_object = EntityProperty
 
     def join_parent(self, q):
-        return q.filter(self.alias.entity_id==self.parent.alias.id)
+        return q.filter(self.alias.entity_id == self.parent.alias.id)
 
 
 class RelationPropertyQuery(PropertyQuery):
-    domain_object = RelationProperty
 
     def join_parent(self, q):
-        return q.filter(self.alias.relation_id==self.parent.alias.id)
+        return q.filter(self.alias.relation_id == self.parent.alias.id)
 
 
 class PropertiesQuery(object):
