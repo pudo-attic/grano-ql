@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import and_, or_
 
-from grano.model import Entity, Project, Account, Relation
+from grano.model import Entity, Account, Relation
 from grano.model import Schema, Property
 from grano.model import db
 from grano.ql.parser import EXTRA_FIELDS, EntityParserNode
