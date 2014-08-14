@@ -165,21 +165,6 @@ class ObjectQuery(object):
         return self.run().next()[1]
 
 
-class ProjectQuery(ObjectQuery):
-
-    domain_object = Project
-    model = {
-        'id': FieldQuery,
-        'slug': FieldQuery,
-        'label': FieldQuery,
-        'created_at': FieldQuery,
-        'updated_at': FieldQuery
-    }
-
-    def join_parent(self, q):
-        return q.join(self.alias, self.parent.alias.project)
-
-
 class AuthorQuery(ObjectQuery):
 
     domain_object = Account
@@ -330,7 +315,6 @@ class RelationQuery(ObjectQuery):
 
     model = {
         'id': FieldQuery,
-        'project': ProjectQuery,
         'author': AuthorQuery,
         'schema': SchemaQuery,
         'properties': RelationPropertiesQuery,
@@ -368,7 +352,6 @@ class EntityQuery(ObjectQuery):
         'created_at': FieldQuery,
         'updated_at': FieldQuery,
         'status': FieldQuery,
-        'project': ProjectQuery,
         'schemata': SchemataQuery,
         'schema': SchemataQuery,
         'author': AuthorQuery,
@@ -377,6 +360,10 @@ class EntityQuery(ObjectQuery):
         'relations': BidiRelationQuery,
         'properties': EntityPropertiesQuery,
     }
+
+    def filter(self, q):
+        q = q.filter(self.alias.project_id == self.node.project.id)
+        return super(EntityQuery, self).filter(q)
 
 
 class SourceEntityQuery(EntityQuery):
@@ -405,8 +392,8 @@ OutboundRelationQuery.model['target'] = TargetEntityQuery
 BidiRelationQuery.model['other'] = BidiEntityQuery
 
 
-def run(query):
-    node = EntityParserNode(None, query)
+def run(project, query):
+    node = EntityParserNode(project, None, query)
     node.value['limit'] = min(1000, node.value.get('limit', 25))
     node.value['offset'] = max(0, node.value.get('offset', 0))
     eq = EntityQuery(None, None, node)

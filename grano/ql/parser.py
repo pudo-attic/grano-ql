@@ -10,7 +10,8 @@ class ParserNode(object):
     defaults = None
     key_field = None
 
-    def __init__(self, name, source):
+    def __init__(self, project, name, source):
+        self.project = project
         self.as_list = isinstance(source, (list, tuple))
         self._value = source
         if self.as_list:
@@ -72,7 +73,7 @@ class ParserNode(object):
         for k, v in self.value.items():
             cls = self.child_types.get(None, ParserNode)
             cls = self.child_types.get(k, cls)
-            yield cls(k, v)
+            yield cls(self.project, k, v)
 
     def to_dict(self):
         if self.is_leaf:

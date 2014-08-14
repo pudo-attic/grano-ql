@@ -1,6 +1,5 @@
 
-var API_BASE = 'http://grano.local:5000/api/1';
-var API_PROJECT = 'south_africa';
+var API = 'http://grano.local:5000/api/1/projects/south_africa';
 
 var granoQuery = angular.module('granoQuery', ['ngRoute', 'ui.bootstrap']);
 
@@ -12,7 +11,7 @@ function makeId() {
 }
 
 granoQuery.factory('schemata', function($http, $q){
-  var url = API_BASE + '/projects/' + API_PROJECT + '/schemata',
+  var url = API + '/schemata',
       res = $http.get(url, {'params': {'limit': 1000, 'full': true}});
 
   var getSchemata = function(obj) {
@@ -64,11 +63,10 @@ granoQuery.factory('queryState', function($http, $rootScope, $location){
 
   var update = function() {
     var q = makeQuery();
-    q['project'] = API_PROJECT;
     q['limit'] = 15;
     $rootScope.$broadcast('querySend');
     var params = {'query': angular.toJson([q])};
-    var res = $http.get(API_BASE + '/query', {'params': params});
+    var res = $http.get(API + '/query', {'params': params});
     res.then(function(rd) {
       $rootScope.$broadcast('queryUpdate', rd.data.result);
     });
