@@ -326,18 +326,21 @@ class RelationQuery(ObjectQuery):
 class InboundRelationQuery(RelationQuery):
 
     def join_parent(self, q):
+        q = q.filter(self.alias.project_id == self.node.project.id)
         return q.join(self.alias, self.parent.alias.inbound)
 
 
 class OutboundRelationQuery(RelationQuery):
 
     def join_parent(self, q):
+        q = q.filter(self.alias.project_id == self.node.project.id)
         return q.join(self.alias, self.parent.alias.outbound)
 
 
 class BidiRelationQuery(RelationQuery):
 
     def join_parent(self, q):
+        q = q.filter(self.alias.project_id == self.node.project.id)
         cond = or_(self.alias.source_id == self.parent.alias.id,
                    self.alias.target_id == self.parent.alias.id)
         return q.filter(cond)
@@ -369,18 +372,21 @@ class EntityQuery(ObjectQuery):
 class SourceEntityQuery(EntityQuery):
 
     def join_parent(self, q):
+        q = q.filter(self.alias.project_id == self.node.project.id)
         return q.join(self.alias, self.parent.alias.source)
 
 
 class TargetEntityQuery(EntityQuery):
 
     def join_parent(self, q):
+        q = q.filter(self.alias.project_id == self.node.project.id)
         return q.join(self.alias, self.parent.alias.target)
 
 
 class BidiEntityQuery(EntityQuery):
 
     def join_parent(self, q):
+        q = q.filter(self.alias.project_id == self.node.project.id)
         cond = and_(or_(self.parent.alias.source_id == self.alias.id,
                         self.parent.alias.target_id == self.alias.id),
                     self.parent.parent.alias.id != self.alias.id)
