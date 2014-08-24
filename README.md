@@ -131,3 +131,8 @@ Potential Problems:
 * How do we tell the difference between null as in "return this value" and null as in "this property is null"?
 
 
+## Indexes
+
+CREATE INDEX dbg1 ON grano_entity (project_id);
+CREATE INDEX dbg2 ON grano_entity_schema (entity_id);
+CREATE INDEX dbg3 ON grano_entity (id);
