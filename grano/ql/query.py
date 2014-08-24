@@ -130,7 +130,16 @@ class ObjectQuery(object):
                 q = q.limit(self.get_child_node_value('limit', 10))
 
         q = q.distinct(self.children['id'].column)
-        return q
+        #q = q.distinct(self.alias.id)
+
+        ## DEBUG
+        from time import time
+        begin = time()
+        print q
+        results = q.all()
+        print "Took:", type(self), (time() - begin)*1000
+
+        return results
 
     def run(self, parent_ids=None):
         """ Collect results for the query from this level and all
