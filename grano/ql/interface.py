@@ -31,7 +31,7 @@ def query(slug):
         'status': 'ok',
         'query': query,
         'query_parsed': eq.node,
-        'result': eq
+        'results': eq
     })
 
 

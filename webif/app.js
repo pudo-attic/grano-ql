@@ -1,5 +1,5 @@
 
-var API = 'http://grano.local:5000/api/1/projects/south_africa';
+var API = 'http://grano.local:5000/api/1/projects/opennews2';
 
 var granoQuery = angular.module('granoQuery', ['ngRoute', 'ui.bootstrap']);
 
@@ -68,7 +68,7 @@ granoQuery.factory('queryState', function($http, $rootScope, $location){
     var params = {'query': angular.toJson([q])};
     var res = $http.get(API + '/query', {'params': params});
     res.then(function(rd) {
-      $rootScope.$broadcast('queryUpdate', rd.data.result);
+      $rootScope.$broadcast('queryUpdate', rd.data.results);
     });
   };
 
