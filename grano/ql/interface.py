@@ -27,12 +27,13 @@ def query(slug):
         raise BadRequest('Invalid data submitted')
 
     eq = run(project, query)
-    return jsonify({
+    res = {
         'status': 'ok',
-        'query': query,
-        'query_parsed': eq.node,
-        'results': eq
-    })
+        'query': eq.node,
+        'results': eq.run(),
+        'total': eq.count()
+    }
+    return jsonify(res)
 
 
 class Installer(Startup):

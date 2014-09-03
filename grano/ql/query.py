@@ -1,57 +1,82 @@
-from itertools import groupby
+from uuid import uuid4
 from datetime import datetime
 
-from sqlalchemy.orm import aliased
-from sqlalchemy.sql import and_, or_
+from sqlalchemy.sql.expression import select, func
 
-from grano.model import Entity, Account, Relation
-from grano.model import Schema, Property
-from grano.model import db
+from grano.core import db
+from grano.model import Account, Schema, Entity, Property
+from grano.model.entity import entity_schema
+from grano.ql.model import BidiRelation
 from grano.ql.parser import EXTRA_FIELDS, EntityParserNode
 
-# TODO: and/or query branches / list queries
 
+class RootQuery(object):
 
-PARENT_ID = '__parent_id'
-
-
-class FieldQuery(object):
-    """ Query a simple column, as opposed to a more complex nested
-    object. This will simply join the required column onto the
-    parent object and - if necessary - filter it's values. """
+    marker = None
 
     def __init__(self, parent, name, node):
         self.parent = parent
-        self.name = name
         self.node = node
+        self.name = name
+        self.results = {}
+        if name is None:
+            self.id = 'root'
+        else:
+            prefix = '_any' if name == '*' else name
+            self.id = '%s_%s' % (prefix, uuid4().hex[:10])
+
+    def join(self, from_obj, partial=False):
+        return from_obj
+
+    def query(self, parent_ids=None):
+        pass
+
+
+class FieldQuery(RootQuery):
+    """ Query a simple field, as opposed to a more complex nested
+    object. """
+    
+    def __init__(self, parent, name, node):
+        super(FieldQuery, self).__init__(parent, name, node)
+
+    @property
+    def filtered(self):
+        return self.node.value is not None
 
     @property
     def column(self):
-        return getattr(self.parent.alias, self.name)
+        return getattr(self.parent.alias.c, self.name)
 
-    def filter(self, q):
-        if self.node is not None and self.node.value is not None:
-            q = q.filter(self.column == self.node.value)
+    def filter(self, q, partial=False):
+        if self.filtered:
+            q = q.where(self.column == self.node.value)
         return q
 
-    def add_columns(self, q):
-        return q.add_columns(self.column)
+    def project(self, q):
+        if not self.filtered:
+            q = q.column(self.column.label(self.id))
+        return q
+
+    def collect(self, row):
+        if self.filtered:
+            val = self.node.value
+        else:
+            val = row.get(self.id, None)
+        self.results[row.get(self.parent.pk_id)] = val
+
+    def assemble(self, parent_id):
+        return self.results.get(parent_id)
 
 
-class ObjectQuery(object):
+class ObjectQuery(RootQuery):
 
     model = {}
     domain_object = None
-    domain_object_marker = None
-    default_fields = []
 
     def __init__(self, parent, name, node):
-        self.name = name
-        self.node = node
-        self.alias = aliased(self.domain_object)
-        self.parent = parent
+        super(ObjectQuery, self).__init__(parent, name, node)
         self.children = {}
-        self.joiners = {}
+        self.alias = self.domain_object.__table__.alias(self.id)
 
         # instantiate the model:
         for name, cls in self.model.items():
@@ -66,116 +91,148 @@ class ObjectQuery(object):
         return default
 
     @property
-    def root(self):
-        """ Get the root level of the query. """
-        if self.parent is None:
-            return self
-        return self.parent.root
+    def pk_id(self):
+        for name, child in self.children.items():
+            if name == 'id':
+                return child.id
 
-    def filter(self, q):
-        """ Apply the joins and filters specified on this level of the
-        query. """
+    @property
+    def filtered(self):
+        for child in self.node.children:
+            if child.name in EXTRA_FIELDS:
+                continue
+            if self.children[child.name].filtered:
+                return True
+
+    def join(self, from_obj, partial=False):
+        """ Apply the joins specified on this level of the query. """
+        if partial and not self.filtered:
+            return from_obj
+
         if self.parent:
-            q = self.join_parent(q)
+            from_obj = self.join_parent(from_obj)
+
         for child in self.node.children:
             if child.name in EXTRA_FIELDS:
                 continue
             if child.name in self.children:
-                q = self.children[child.name].filter(q)
+                field = self.children[child.name]
+                from_obj = field.join(from_obj, partial=True)
+        return from_obj
+
+    def filter(self, q, partial=False):
+        """ Apply the joins specified on this level of the query. """
+        if not self.filtered:
+            return q
+        for child in self.node.children:
+            if child.name in EXTRA_FIELDS:
+                continue
+            if child.name in self.children:
+                field = self.children[child.name]
+                q = field.filter(q, partial=True)
         return q
 
-    def add_columns(self, q):
+    def join_parent(self, from_obj):
+        return from_obj
+
+    def project(self, q):
         """ Define the columns to be retrieved when this is the active
         level of the query. """
+        if self.parent is not None:
+            q = q.column(self.parent.alias.c.id.label(self.parent.pk_id))
+
         for name, child in self.children.items():
-            if not isinstance(child, FieldQuery):
-                continue
             for node in self.node.children:
-                if node.value is None and node.name == name:
-                    q = child.add_columns(q)
+                if not node.name == name:
+                    continue
+                if isinstance(child, FieldQuery):
+                    q = child.project(q)
         return q
 
-    def _make_object(self, record):
-        """ Combine the results of a query and return object into
-        a result object. """
-        data = dict([(k, v) for (k, v) in self.node.value.items() if k != '*'])
-        if self.domain_object_marker is not None:
-            data['obj'] = self.domain_object_marker
-        if record is not None:
-            res = dict(zip(record.keys(), record))
-            data[PARENT_ID] = res.get(PARENT_ID)
-            for node in self.node.children:
-                if node.value is None:
-                    data[node.name] = res.get(node.name)
-        return data
-
-    def query(self, parent_ids):
+    def query(self, parent_ids=None):
         """ Construct a SQL query for this level of the request. """
-        q = db.session.query()
-        q = self.filter(q)
-        q = self.add_columns(q)
-        if self.parent is not None:
-            col = self.parent.alias.id.label(PARENT_ID)
-            q = q.add_columns(col)
-            if parent_ids is not None:
-                q = q.filter(col.in_(parent_ids))
-            q = q.distinct(col)
-
-        # pagination
         if self.parent is None:
+            q = select(from_obj=self.join(self.alias))
             q = q.offset(self.get_child_node_value('offset', 0))
             if not self.node.as_list:
                 q = q.limit(1)
             else:
                 q = q.limit(self.get_child_node_value('limit', 10))
+        else:
+            q = select(from_obj=self.join(self.parent.alias))
+        q = self.filter(q)
+        
+        if parent_ids is not None:
+            q = q.where(self.parent.alias.c.id.in_(parent_ids))
+        
+        q = self.project(q)
+        q = q.distinct()
 
-        q = q.distinct(self.children['id'].column)
-        #q = q.distinct(self.alias.id)
+        ids = []
+        rp = db.session.execute(q)
+        while True:
+            row = rp.fetchone()
+            if row is None:
+                break
+            row = dict(row.items())
+            ids.append(row.get(self.pk_id))
+            self.collect(row)
 
-        ## DEBUG
-        from time import time
-        begin = time()
-        print q
-        results = q.all()
-        print "Took:", type(self), (time() - begin)*1000
+        for name, child in self.children.items():
+            child.query(parent_ids=ids)
 
-        return results
+    def count(self):
+        """ Get a count of the number of distinct objects. """
+        q = select(from_obj=self.join(self.alias))
+        q = self.filter(q, partial=True)
+        q = q.column(func.count(func.distinct(self.alias.c.id)).label('num'))
+        rp = db.session.execute(q)
+        return rp.fetchone().num
 
-    def run(self, parent_ids=None):
-        """ Collect results for the query from this level and all
-        children. Returns a generator, of parent_id, results tuples.
-        """
-        results = [self._make_object(r) for r in self.query(parent_ids)]
-        ids = [r.get('id') for r in results]
-
-        if not len(results):
-            p = self._make_object({})
-            p.pop(PARENT_ID)
-            yield None, [p] if self.node.as_list else p
+    def collect(self, row):
+        parent_id = row.get(self.parent.pk_id) if self.parent else None
+        if parent_id not in self.results:
+            self.results[parent_id] = {}
+        id = row.get(self.pk_id)
+        if id not in self.results[parent_id]:
+            data = {}
+            if self.marker is not None:
+                data['obj'] = self.marker
+            self.results[parent_id][id] = data
 
         for name, child in self.children.items():
             if isinstance(child, FieldQuery):
-                continue
-            if name not in [node.name for node in self.node.children]:
-                continue
-            for parent_id, nested in child.run(parent_ids=ids):
-                for result in results:
-                    if parent_id == result['id']:
-                        result[name] = nested
+                child.collect(row)
 
-        by_parent = groupby(results, lambda r: r.pop(PARENT_ID))
-        for parent_id, results in by_parent:
-            results = list(results)
+    def assemble(self, parent_id):
+        data = self.results.get(parent_id, {})
+        items = []
+        for id, item in data.items():
+            for name, child in self.children.items():
+                item[name] = child.assemble(id)
+            items.append(item)
+
             if not self.node.as_list:
-                results = results.pop()
-            yield parent_id, results
+                break
 
-    def to_dict(self):
-        return self.run().next()[1]
+        if not self.node.as_list:
+            return items.pop()
+        return items
+
+    def run(self):
+        self.query()
+        return self.assemble(None)
+
+
+class IdFieldQuery(FieldQuery):
+
+    def assemble(self, parent_id):
+        id = super(IdFieldQuery, self).assemble(parent_id)
+        return id.split(':', 1).pop()
 
 
 class AuthorQuery(ObjectQuery):
-
+    
     domain_object = Account
     model = {
         'id': FieldQuery,
@@ -185,12 +242,13 @@ class AuthorQuery(ObjectQuery):
         'updated_at': FieldQuery
     }
 
-    def join_parent(self, q):
-        return q.join(self.alias, self.parent.alias.author)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.id == self.parent.alias.c.author_id)
 
 
 class SchemaQuery(ObjectQuery):
-
+    
     domain_object = Schema
     model = {
         'id': FieldQuery,
@@ -201,14 +259,18 @@ class SchemaQuery(ObjectQuery):
         'updated_at': FieldQuery
     }
 
-    def join_parent(self, q):
-        return q.join(self.alias, self.parent.alias.schema)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.id == self.parent.alias.c.schema_id)
 
 
 class SchemataQuery(SchemaQuery):
 
-    def join_parent(self, q):
-        return q.join(self.alias, self.parent.alias.schemata)
+    def join_parent(self, from_obj):
+        jt = entity_schema.alias()
+        from_obj = from_obj.join(jt, self.parent.alias.c.id == jt.c.entity_id)
+        return from_obj.join(self.alias,
+                             self.alias.c.id == jt.c.schema_id)
 
 
 class PropertyQuery(ObjectQuery):
@@ -257,29 +319,38 @@ class PropertyQuery(ObjectQuery):
         node.as_list = True
         super(PropertyQuery, self).__init__(parent, name, node)
 
-    def _make_object(self, record):
-        record = super(PropertyQuery, self)._make_object(record)
-        record.pop('active', None)
-        for col in self.value_columns.keys():
-            if col in record:
-                if 'value' not in record:
-                    record['value'] = None
-                val = record.pop(col)
-                if val is not None:
-                    record['value'] = val
-        return record
+    @property
+    def filtered(self):
+        for name, child in self.children.items():
+            if name in self.value_columns and child.filtered:
+                print name, child.node, child.node.value
+                return True
+        return False
+
+    def assemble(self, parent_id):
+        props = {}
+        for prop in super(PropertyQuery, self).assemble(parent_id):
+            prop['value'] = None
+            for col in self.value_columns:
+                col_val = prop.pop(col, None)
+                if col_val is not None:
+                    prop['value'] = col_val
+            props[prop.pop('name')] = prop
+        return props
 
 
 class EntityPropertyQuery(PropertyQuery):
 
-    def join_parent(self, q):
-        return q.filter(self.alias.entity_id == self.parent.alias.id)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.entity_id == self.parent.alias.c.id)
 
 
 class RelationPropertyQuery(PropertyQuery):
 
-    def join_parent(self, q):
-        return q.filter(self.alias.relation_id == self.parent.alias.id)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.relation_id == self.parent.alias.c.relation_id)
 
 
 class PropertiesQuery(object):
@@ -288,25 +359,41 @@ class PropertiesQuery(object):
 
     def __init__(self, parent, name, node):
         self.parent = parent
-        self.children = {}
+        self.children = []
         for child in node.children:
             prop = self.child_cls(parent, child.name, child)
-            self.children[child.name] = prop
+            self.children.append(prop)
 
-    def filter(self, q):
-        for name, child in self.children.items():
-            q = child.filter(q)
+    @property
+    def filtered(self):
+        for child in self.children:
+            if child.filtered:
+                return True
+        return False
+
+    def filter(self, q, partial=False):
+        for child in self.children:
+            q = child.filter(q, partial=partial)
         return q
 
-    def run(self, parent_ids=None):
-        results = {}
-        for name, child in self.children.items():
-            for parent_id, values in child.run(parent_ids=parent_ids):
-                if parent_id not in results:
-                    results[parent_id] = {}
-                for value in values:
-                    results[parent_id][value.pop('name')] = value
-        return results.items()
+    def join(self, from_obj, partial=False):
+        for child in self.children:
+            from_obj = child.join(from_obj, partial=partial)
+        return from_obj
+
+    def query(self, parent_ids=None):
+        for child in self.children:
+            child.query(parent_ids=parent_ids)
+
+    def collect(self, row):
+        for child in self.children:
+            child.collect(row)
+
+    def assemble(self, parent_id):
+        data = {}
+        for child in self.children:
+            data.update(child.assemble(parent_id))
+        return data
 
 
 class EntityPropertiesQuery(PropertiesQuery):
@@ -318,12 +405,10 @@ class RelationPropertiesQuery(PropertiesQuery):
 
 
 class RelationQuery(ObjectQuery):
-
-    domain_object = Relation
-    domain_object_marker = 'relation'
-
+    
+    domain_object = BidiRelation
     model = {
-        'id': FieldQuery,
+        'id': IdFieldQuery,
         'author': AuthorQuery,
         'schema': SchemaQuery,
         'properties': RelationPropertiesQuery,
@@ -331,41 +416,51 @@ class RelationQuery(ObjectQuery):
         'updated_at': FieldQuery
     }
 
+    def bidi_filter(self, q):
+        return q.where(self.alias.c.reverse == False)
+
+    def filter(self, q, partial=False):
+        if self.filtered or not partial:
+            q = q.where(self.alias.c.project_id == self.node.project.id)
+            q = self.bidi_filter(q)
+        return super(RelationQuery, self).filter(q, partial=partial)
+
 
 class InboundRelationQuery(RelationQuery):
 
-    def join_parent(self, q):
-        q = q.filter(self.alias.project_id == self.node.project.id)
-        return q.join(self.alias, self.parent.alias.inbound)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.target_id == self.parent.alias.c.id)
 
 
 class OutboundRelationQuery(RelationQuery):
 
-    def join_parent(self, q):
-        q = q.filter(self.alias.project_id == self.node.project.id)
-        return q.join(self.alias, self.parent.alias.outbound)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.source_id == self.parent.alias.c.id)
 
 
 class BidiRelationQuery(RelationQuery):
 
-    def join_parent(self, q):
-        q = q.filter(self.alias.project_id == self.node.project.id)
-        cond = or_(self.alias.source_id == self.parent.alias.id,
-                   self.alias.target_id == self.parent.alias.id)
-        return q.filter(cond)
+    def bidi_filter(self, q):
+        return q
+
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.target_id == self.parent.alias.c.id)
 
 
 class EntityQuery(ObjectQuery):
-
+    
     domain_object = Entity
-    domain_object_marker = 'entity'
+    marker = 'entity'
     model = {
         'id': FieldQuery,
         'created_at': FieldQuery,
         'updated_at': FieldQuery,
         'status': FieldQuery,
         'schemata': SchemataQuery,
-        'schema': SchemataQuery,
+        'schema': SchemaQuery,
         'author': AuthorQuery,
         'inbound': InboundRelationQuery,
         'outbound': OutboundRelationQuery,
@@ -373,33 +468,31 @@ class EntityQuery(ObjectQuery):
         'properties': EntityPropertiesQuery,
     }
 
-    def filter(self, q):
-        q = q.filter(self.alias.project_id == self.node.project.id)
-        return super(EntityQuery, self).filter(q)
+    def filter(self, q, partial=False):
+        if self.filtered or not partial or not self.parent:
+            q = q.where(self.alias.c.project_id == self.node.project.id)
+        return super(EntityQuery, self).filter(q, partial=partial)
 
 
 class SourceEntityQuery(EntityQuery):
 
-    def join_parent(self, q):
-        q = q.filter(self.alias.project_id == self.node.project.id)
-        return q.join(self.alias, self.parent.alias.source)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.id == self.parent.alias.c.source_id)
 
 
 class TargetEntityQuery(EntityQuery):
 
-    def join_parent(self, q):
-        q = q.filter(self.alias.project_id == self.node.project.id)
-        return q.join(self.alias, self.parent.alias.target)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.id == self.parent.alias.c.target_id)
 
 
 class BidiEntityQuery(EntityQuery):
 
-    def join_parent(self, q):
-        q = q.filter(self.alias.project_id == self.node.project.id)
-        cond = and_(or_(self.parent.alias.source_id == self.alias.id,
-                        self.parent.alias.target_id == self.alias.id),
-                    self.parent.parent.alias.id != self.alias.id)
-        return q.filter(cond)
+    def join_parent(self, from_obj):
+        return from_obj.join(self.alias,
+                             self.alias.c.id == self.parent.alias.c.source_id)
 
 
 InboundRelationQuery.model['source'] = SourceEntityQuery
