@@ -2,6 +2,7 @@ from uuid import uuid4
 from datetime import datetime
 
 from sqlalchemy.sql.expression import select, func
+from sqlalchemy import or_
 
 from grano.core import db
 from grano.model import Account, Schema, Entity, Property
@@ -31,6 +32,20 @@ class RootQuery(object):
     def query(self, parent_ids=None):
         pass
 
+    def get_child_node_value(self, name, default=None):
+        for node in self.node.children:
+            if node.name == name:
+                return node.value
+        return default
+
+    @property
+    def optional(self):
+        if self.parent is not None and self.parent.optional:
+            return True
+        if self.get_child_node_value('optional', False):
+            return True
+        return False
+
 
 class FieldQuery(RootQuery):
     """ Query a simple field, as opposed to a more complex nested
@@ -49,7 +64,10 @@ class FieldQuery(RootQuery):
 
     def filter(self, q, partial=False):
         if self.filtered:
-            q = q.where(self.column == self.node.value)
+            cond = self.column == self.node.value
+            if self.optional:
+                cond = or_(cond, self.column==None)
+            q = q.where(cond)
         return q
 
     def project(self, q):
@@ -72,6 +90,7 @@ class ObjectQuery(RootQuery):
 
     model = {}
     domain_object = None
+    always_filter = False
 
     def __init__(self, parent, name, node):
         super(ObjectQuery, self).__init__(parent, name, node)
@@ -83,12 +102,6 @@ class ObjectQuery(RootQuery):
             for node in self.node.children:
                 if node.name == name:
                     self.children[name] = cls(self, name, node)
-
-    def get_child_node_value(self, name, default=None):
-        for node in self.node.children:
-            if node.name == name:
-                return node.value
-        return default
 
     @property
     def pk_id(self):
@@ -122,7 +135,7 @@ class ObjectQuery(RootQuery):
 
     def filter(self, q, partial=False):
         """ Apply the joins specified on this level of the query. """
-        if not self.filtered:
+        if not self.always_filter and not self.filtered:
             return q
         for child in self.node.children:
             if child.name in EXTRA_FIELDS:
@@ -167,6 +180,7 @@ class ObjectQuery(RootQuery):
         
         q = self.project(q)
         q = q.distinct()
+        print q
 
         ids = []
         rp = db.session.execute(q)
@@ -244,7 +258,8 @@ class AuthorQuery(ObjectQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.id == self.parent.alias.c.author_id)
+                             onclause=self.alias.c.id == self.parent.alias.c.author_id,
+                             isouter=self.optional)
 
 
 class SchemaQuery(ObjectQuery):
@@ -261,16 +276,19 @@ class SchemaQuery(ObjectQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.id == self.parent.alias.c.schema_id)
+                             onclause=self.alias.c.id == self.parent.alias.c.schema_id,
+                             isouter=self.optional)
 
 
 class SchemataQuery(SchemaQuery):
 
     def join_parent(self, from_obj):
         jt = entity_schema.alias()
-        from_obj = from_obj.join(jt, self.parent.alias.c.id == jt.c.entity_id)
+        from_obj = from_obj.join(jt, self.parent.alias.c.id == jt.c.entity_id,
+                                 isouter=self.optional)
         return from_obj.join(self.alias,
-                             self.alias.c.id == jt.c.schema_id)
+                             onclause=self.alias.c.id == jt.c.schema_id,
+                             isouter=self.optional)
 
 
 class PropertyQuery(ObjectQuery):
@@ -281,6 +299,7 @@ class PropertyQuery(ObjectQuery):
     one that holds a value. """
 
     domain_object = Property
+    always_filter = True
     value_columns = {
         'value_string': basestring,
         'value_datetime': datetime,
@@ -316,6 +335,7 @@ class PropertyQuery(ObjectQuery):
         else:
             node.value['name'] = name
         node.value['active'] = True
+        node.value['optional'] = True
         node.as_list = True
         super(PropertyQuery, self).__init__(parent, name, node)
 
@@ -324,8 +344,8 @@ class PropertyQuery(ObjectQuery):
         for name, child in self.children.items():
             if name in self.value_columns and child.filtered:
                 return True
-            if name == 'name' and child.filtered:
-                return True
+            #if name == 'name' and child.filtered:
+            #    return True
         return False
 
     def assemble(self, parent_id):
@@ -344,14 +364,16 @@ class EntityPropertyQuery(PropertyQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.entity_id == self.parent.alias.c.id)
+                             onclause=self.alias.c.entity_id == self.parent.alias.c.id,
+                             isouter=self.optional)
 
 
 class RelationPropertyQuery(PropertyQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.relation_id == self.parent.alias.c.relation_id)
+                             onclause=self.alias.c.relation_id == self.parent.alias.c.relation_id,
+                             isouter=self.optional)
 
 
 class PropertiesQuery(object):
@@ -396,6 +418,10 @@ class PropertiesQuery(object):
             data.update(child.assemble(parent_id))
         return data
 
+    @property
+    def optional(self):
+        return True
+
 
 class EntityPropertiesQuery(PropertiesQuery):
     child_cls = EntityPropertyQuery
@@ -432,14 +458,16 @@ class InboundRelationQuery(RelationQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.target_id == self.parent.alias.c.id)
+                             onclause=self.alias.c.target_id == self.parent.alias.c.id,
+                             isouter=self.optional)
 
 
 class OutboundRelationQuery(RelationQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.source_id == self.parent.alias.c.id)
+                             onclause=self.alias.c.source_id == self.parent.alias.c.id,
+                             isouter=self.optional)
 
 
 class BidiRelationQuery(RelationQuery):
@@ -449,7 +477,8 @@ class BidiRelationQuery(RelationQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.target_id == self.parent.alias.c.id)
+                             onclause=self.alias.c.target_id == self.parent.alias.c.id,
+                             isouter=self.optional)
 
 
 class EntityQuery(ObjectQuery):
@@ -480,21 +509,24 @@ class SourceEntityQuery(EntityQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.id == self.parent.alias.c.source_id)
+                             onclause=self.alias.c.id == self.parent.alias.c.source_id,
+                             isouter=self.optional)
 
 
 class TargetEntityQuery(EntityQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.id == self.parent.alias.c.target_id)
+                             onclause=self.alias.c.id == self.parent.alias.c.target_id,
+                             isouter=self.optional)
 
 
 class BidiEntityQuery(EntityQuery):
 
     def join_parent(self, from_obj):
         return from_obj.join(self.alias,
-                             self.alias.c.id == self.parent.alias.c.source_id)
+                             onclause=self.alias.c.id == self.parent.alias.c.source_id,
+                             isouter=self.optional)
 
 
 InboundRelationQuery.model['source'] = SourceEntityQuery
