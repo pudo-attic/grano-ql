@@ -129,7 +129,7 @@ class ObjectQuery(RootQuery):
                 continue
             if child.name in self.children:
                 field = self.children[child.name]
-                q = field.filter(q, partial=True)
+                q = field.filter(q, partial=partial)
         return q
 
     def join_parent(self, from_obj):
@@ -215,7 +215,7 @@ class ObjectQuery(RootQuery):
             if not self.node.as_list:
                 break
 
-        if not self.node.as_list:
+        if not self.node.as_list and len(items):
             return items.pop()
         return items
 
@@ -228,7 +228,7 @@ class IdFieldQuery(FieldQuery):
 
     def assemble(self, parent_id):
         id = super(IdFieldQuery, self).assemble(parent_id)
-        return id.split(':', 1).pop()
+        return id.split(':', 1)[0]
 
 
 class AuthorQuery(ObjectQuery):
@@ -323,7 +323,8 @@ class PropertyQuery(ObjectQuery):
     def filtered(self):
         for name, child in self.children.items():
             if name in self.value_columns and child.filtered:
-                print name, child.node, child.node.value
+                return True
+            if name == 'name' and child.filtered:
                 return True
         return False
 
@@ -409,6 +410,7 @@ class RelationQuery(ObjectQuery):
     domain_object = BidiRelation
     model = {
         'id': IdFieldQuery,
+        'reverse': FieldQuery,
         'author': AuthorQuery,
         'schema': SchemaQuery,
         'properties': RelationPropertiesQuery,
