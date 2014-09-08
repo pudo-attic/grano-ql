@@ -502,6 +502,7 @@ class EntityQuery(ObjectQuery):
     def filter(self, q, partial=False):
         if self.filtered or not partial or not self.parent:
             q = q.where(self.alias.c.project_id == self.node.project.id)
+            q = q.where(self.alias.c.same_as == None)
         return super(EntityQuery, self).filter(q, partial=partial)
 
 
