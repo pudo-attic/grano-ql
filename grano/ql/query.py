@@ -62,7 +62,7 @@ class FieldQuery(RootQuery):
     def column(self):
         return getattr(self.parent.alias.c, self.name)
 
-    def filter(self, q, partial=False):
+    def filter(self, q, root=False, partial=False):
         if self.filtered:
             cond = self.column == self.node.value
             if self.optional:
@@ -90,8 +90,7 @@ class ObjectQuery(RootQuery):
 
     model = {}
     domain_object = None
-    always_filter = False
-
+    
     def __init__(self, parent, name, node):
         super(ObjectQuery, self).__init__(parent, name, node)
         self.children = {}
@@ -133,16 +132,16 @@ class ObjectQuery(RootQuery):
                 from_obj = field.join(from_obj, partial=True)
         return from_obj
 
-    def filter(self, q, partial=False):
+    def filter(self, q, root=False, partial=False):
         """ Apply the joins specified on this level of the query. """
-        if not self.always_filter and not self.filtered:
+        if not root and not self.filtered:
             return q
         for child in self.node.children:
             if child.name in EXTRA_FIELDS:
                 continue
             if child.name in self.children:
                 field = self.children[child.name]
-                q = field.filter(q, partial=partial)
+                q = field.filter(q, root=False, partial=partial)
         return q
 
     def join_parent(self, from_obj):
@@ -173,7 +172,7 @@ class ObjectQuery(RootQuery):
                 q = q.limit(self.get_child_node_value('limit', 10))
         else:
             q = select(from_obj=self.join(self.parent.alias))
-        q = self.filter(q)
+        q = self.filter(q, root=True)
         
         if parent_ids is not None:
             q = q.where(self.parent.alias.c.id.in_(parent_ids))
@@ -299,7 +298,6 @@ class PropertyQuery(ObjectQuery):
     one that holds a value. """
 
     domain_object = Property
-    always_filter = True
     value_columns = {
         'value_string': basestring,
         'value_datetime': datetime,
@@ -339,11 +337,17 @@ class PropertyQuery(ObjectQuery):
         node.as_list = True
         super(PropertyQuery, self).__init__(parent, name, node)
 
+    def filter(self, q, root=False, partial=False):
+        if not root and not self.filtered:
+            return q
+        return super(PropertyQuery, self).filter(q, root=root, partial=partial)
+
     @property
     def filtered(self):
         for name, child in self.children.items():
-            if name in self.value_columns and child.filtered:
-                return True
+            if child.filtered:
+                if name in self.value_columns:
+                    return True
             #if name == 'name' and child.filtered:
             #    return True
         return False
@@ -394,9 +398,9 @@ class PropertiesQuery(object):
                 return True
         return False
 
-    def filter(self, q, partial=False):
+    def filter(self, q, root=False, partial=False):
         for child in self.children:
-            q = child.filter(q, partial=partial)
+            q = child.filter(q, root=root, partial=partial)
         return q
 
     def join(self, from_obj, partial=False):
@@ -447,11 +451,11 @@ class RelationQuery(ObjectQuery):
     def bidi_filter(self, q):
         return q.where(self.alias.c.reverse == False)
 
-    def filter(self, q, partial=False):
+    def filter(self, q, root=False, partial=False):
         if self.filtered or not partial:
             q = q.where(self.alias.c.project_id == self.node.project.id)
             q = self.bidi_filter(q)
-        return super(RelationQuery, self).filter(q, partial=partial)
+        return super(RelationQuery, self).filter(q, root=root, partial=partial)
 
 
 class InboundRelationQuery(RelationQuery):
@@ -499,11 +503,11 @@ class EntityQuery(ObjectQuery):
         'properties': EntityPropertiesQuery,
     }
 
-    def filter(self, q, partial=False):
+    def filter(self, q, root=False, partial=False):
         if self.filtered or not partial or not self.parent:
             q = q.where(self.alias.c.project_id == self.node.project.id)
             q = q.where(self.alias.c.same_as == None)
-        return super(EntityQuery, self).filter(q, partial=partial)
+        return super(EntityQuery, self).filter(q, root=root, partial=partial)
 
 
 class SourceEntityQuery(EntityQuery):
