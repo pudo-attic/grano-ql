@@ -11,7 +11,7 @@ from grano.ql.model import BidiRelation
 from grano.ql.parser import EXTRA_FIELDS, EntityParserNode
 
 
-class RootQuery(object):
+class Query(object):
 
     marker = None
 
@@ -47,7 +47,7 @@ class RootQuery(object):
         return False
 
 
-class FieldQuery(RootQuery):
+class FieldQuery(Query):
     """ Query a simple field, as opposed to a more complex nested
     object. """
     
@@ -62,7 +62,7 @@ class FieldQuery(RootQuery):
     def column(self):
         return getattr(self.parent.alias.c, self.name)
 
-    def filter(self, q, root=False, partial=False):
+    def filter(self, q, partial=False):
         if self.filtered:
             cond = self.column == self.node.value
             if self.optional:
@@ -71,7 +71,7 @@ class FieldQuery(RootQuery):
         return q
 
     def project(self, q):
-        if not self.filtered:
+        if self.name == 'id' or not self.filtered:
             q = q.column(self.column.label(self.id))
         return q
 
@@ -86,7 +86,7 @@ class FieldQuery(RootQuery):
         return self.results.get(parent_id)
 
 
-class ObjectQuery(RootQuery):
+class ObjectQuery(Query):
 
     model = {}
     domain_object = None
@@ -132,16 +132,17 @@ class ObjectQuery(RootQuery):
                 from_obj = field.join(from_obj, partial=True)
         return from_obj
 
-    def filter(self, q, root=False, partial=False):
+    def filter(self, q, partial=False):
         """ Apply the joins specified on this level of the query. """
-        if not root and not self.filtered:
+        if not self.filtered:
             return q
+
         for child in self.node.children:
             if child.name in EXTRA_FIELDS:
                 continue
             if child.name in self.children:
                 field = self.children[child.name]
-                q = field.filter(q, root=False, partial=partial)
+                q = field.filter(q, partial=partial)
         return q
 
     def join_parent(self, from_obj):
@@ -172,13 +173,14 @@ class ObjectQuery(RootQuery):
                 q = q.limit(self.get_child_node_value('limit', 10))
         else:
             q = select(from_obj=self.join(self.parent.alias))
-        q = self.filter(q, root=True)
+        q = self.filter(q)
         
         if parent_ids is not None:
             q = q.where(self.parent.alias.c.id.in_(parent_ids))
         
         q = self.project(q)
         q = q.distinct()
+        print self, type(self)
         print q
 
         ids = []
@@ -337,10 +339,14 @@ class PropertyQuery(ObjectQuery):
         node.as_list = True
         super(PropertyQuery, self).__init__(parent, name, node)
 
-    def filter(self, q, root=False, partial=False):
-        if not root and not self.filtered:
-            return q
-        return super(PropertyQuery, self).filter(q, root=root, partial=partial)
+    def filter(self, q, partial=False):
+        for child in self.node.children:
+            if child.name in EXTRA_FIELDS:
+                continue
+            if child.name in self.children:
+                field = self.children[child.name]
+                q = field.filter(q, partial=partial)
+        return q
 
     @property
     def filtered(self):
@@ -398,9 +404,10 @@ class PropertiesQuery(object):
                 return True
         return False
 
-    def filter(self, q, root=False, partial=False):
+    def filter(self, q, partial=False):
         for child in self.children:
-            q = child.filter(q, root=root, partial=partial)
+            if child.filtered:
+                q = child.filter(q, partial=partial)
         return q
 
     def join(self, from_obj, partial=False):
@@ -448,14 +455,18 @@ class RelationQuery(ObjectQuery):
         'updated_at': FieldQuery
     }
 
+    @property
+    def filtered(self):
+        return True
+
     def bidi_filter(self, q):
         return q.where(self.alias.c.reverse == False)
 
-    def filter(self, q, root=False, partial=False):
+    def filter(self, q, partial=False):
         if self.filtered or not partial:
             q = q.where(self.alias.c.project_id == self.node.project.id)
             q = self.bidi_filter(q)
-        return super(RelationQuery, self).filter(q, root=root, partial=partial)
+        return super(RelationQuery, self).filter(q, partial=partial)
 
 
 class InboundRelationQuery(RelationQuery):
@@ -503,11 +514,15 @@ class EntityQuery(ObjectQuery):
         'properties': EntityPropertiesQuery,
     }
 
-    def filter(self, q, root=False, partial=False):
+    @property
+    def filtered(self):
+        return True
+
+    def filter(self, q, partial=False):
         if self.filtered or not partial or not self.parent:
             q = q.where(self.alias.c.project_id == self.node.project.id)
             q = q.where(self.alias.c.same_as == None)
-        return super(EntityQuery, self).filter(q, root=root, partial=partial)
+        return super(EntityQuery, self).filter(q, partial=partial)
 
 
 class SourceEntityQuery(EntityQuery):

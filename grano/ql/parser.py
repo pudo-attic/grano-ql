@@ -132,6 +132,7 @@ class PropertiesParserNode(ParserNode):
 class EntityParserNode(ParserNode):
 
     defaults = {
+        'id': None,
         'status': None,
         'schemata': [{}],
         'properties': {}
@@ -149,6 +150,8 @@ class EntityParserNode(ParserNode):
 class RelationParserNode(ParserNode):
 
     defaults = {
+        'id': None,
+        'reverse': None,
         'schema': [],
         'properties': {}
     }
