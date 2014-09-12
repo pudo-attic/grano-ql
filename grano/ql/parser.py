@@ -133,7 +133,7 @@ class EntityParserNode(ParserNode):
 
     defaults = {
         'id': None,
-        'status': None,
+        'degree': None,
         'schemata': [{}],
         'properties': {}
     }
