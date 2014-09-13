@@ -445,6 +445,7 @@ class RelationPropertiesQuery(PropertiesQuery):
 class RelationQuery(ObjectQuery):
     
     domain_object = BidiRelation
+    marker = 'relation'
     model = {
         'id': IdFieldQuery,
         'reverse': FieldQuery,
