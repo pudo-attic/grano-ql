@@ -180,8 +180,8 @@ class ObjectQuery(Query):
         
         q = self.project(q)
         q = q.distinct()
-        print self, type(self)
-        print q
+        #print self, type(self)
+        #print q
 
         ids = []
         rp = db.session.execute(q)
