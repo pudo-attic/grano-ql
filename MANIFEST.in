@@ -1,3 +1,0 @@
-include LICENSE VERSION README.md
-recursive-include static *
-global-exclude *.pyc
